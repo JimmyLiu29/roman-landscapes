@@ -77,13 +77,15 @@ async function render() {
     $('#map-error').textContent = event.error?.message || 'Map rendering failed.';
     $('#map-error').hidden = false;
   });
-  map.on('idle', () => { $('#map').dataset.ready = String($('#map-error').hidden); });
   await new Promise(resolve => map.once('load',resolve));
   await mountFoundation(map,release,async name => {
     const file=await content(name);
     const stream=file.stream().pipeThrough(new DecompressionStream('gzip'));
     return new Response(stream).json();
   },await readState('layers').catch(()=>null),layers=>writeState('layers',layers).catch(()=>{}));
+  const ready=()=>{ $('#map').dataset.ready=String($('#map-error').hidden); };
+  map.on('idle',ready);
+  if (map.loaded()) ready();
   $('#reset').disabled=false; coordinates();
   const names = { relief: 'Shaded Relief', land: 'Land', rivers: 'Rivers and Lake Centerlines', lakes: 'Lakes' };
   for (const record of sources.sources) {

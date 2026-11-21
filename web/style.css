@@ -88,3 +88,11 @@ output { font: 12px ui-monospace, monospace; color: #435a5b; }
 .legend .key-port{background:#296f79}.legend .key-certain,.legend .key-conjectured,.legend .key-tentative,.legend .key-shipping{width:18px;height:0;border:0;border-top:3px solid #794321}
 .legend .key-conjectured{border-top:2px solid #ac794e}.legend .key-tentative{border-top:1px dashed #b99275}.legend .key-shipping{border-top:2px dashed #24548d}
 @media(max-width:740px){#guide-dialog{inset:0;margin:0;width:100%;height:100dvh;max-height:100dvh;border:0;border-radius:0}.map-panel{min-height:360px}}
+
+.layer-control{margin:8px 0 12px}
+.layer-control select{display:block;margin:4px 0 0 20px;width:calc(100% - 20px);min-height:32px;color:var(--ink);font:inherit;font-size:13px}
+.layer-sub{margin:5px 0 0 18px;font-size:13px}
+#map-hover{position:absolute;top:10px;left:10px;max-width:calc(100% - 65px);padding:4px 9px;border-radius:4px;background:var(--paper);color:var(--ink);box-shadow:0 1px 4px #0003;font:600 13px/1.45 system-ui;pointer-events:none;overflow-wrap:anywhere}
+.legend i:is(.key-rank1,.key-rank2,.key-rank3,.key-rank4){background:#883d39;border:1px solid white;border-radius:50%}
+.legend .key-rank1{width:13px;height:13px}.legend .key-rank2{width:10px;height:10px}.legend .key-rank3{width:8px;height:8px}.legend .key-rank4{width:6px;height:6px}
+.legend i:is(.key-coastal,.key-slowover){width:18px;height:0;border:0;border-top:1px dashed #24548d;opacity:.55}.legend i.key-slowover{border-top-width:2px;opacity:.75}

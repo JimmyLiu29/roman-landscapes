@@ -41,6 +41,7 @@ async function launch(width, offline = false) {
     if (/^https?:/.test(req.url()) && new URL(req.url()).origin !== new URL(origin).origin) external.add(req.url());
   });
   const page = context.pages()[0];
+  page.setDefaultTimeout(30000);
   page.on('pageerror', e => errors.add(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.add(m.text()); });
   await page.goto(origin);
@@ -53,8 +54,9 @@ async function layout(page, width) {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
   assert.equal(await page.locator('h1').innerText(), 'Roman Landscapes');
   await page.locator('#foundation-controls').waitFor();
-  assert.deepEqual(await page.locator('#atlas-layers label').allTextContents(),
-    [' Settlements (1,388)',' Terrestrial roads (14,769)',' Maritime routes (584 routes · 294 ports)']);
+  assert.equal(await page.locator('[data-layer]').count(),3);
+  assert.equal(await page.locator('[data-tier]').count(),3);
+  assert.deepEqual(await page.locator('[data-layer]').evaluateAll(bs=>bs.map(b=>b.dataset.layer)),['settlements','roads','maritime']);
   assert.equal(await page.locator('#credits a').count(), 8);
   const box = await page.locator('canvas.maplibregl-canvas').boundingBox();
   assert.ok(box.width >= 300 && box.height >= 200);
@@ -110,7 +112,151 @@ async function guide(page,width) {
   }
 }
 
-async function interactions(page) {
+async function tierInteractions(page,open,loaded) {
+  const tier=id=>page.locator('[data-tier="'+id+'"]');
+  const ports=page.locator('[data-sublayer=ports]');
+  const countText=id=>page.locator('[data-count="'+id+'"]').textContent();
+  const expected={settlements:{all:1388,medium:992,major:176},maritime:{all:584,open:143,primary:74},
+    roads:{all:14769,probable:13992,certain:1040}};
+  const observed={};
+  for(const [group,options] of Object.entries(expected)) {
+    observed[group]={};
+    for(const [value,count] of Object.entries(options)) {
+      await tier(group).selectOption(value);
+      assert((await countText(group)).startsWith(' ('+count.toLocaleString('en-US')));
+      const visible=await page.evaluate(async group=>{
+        const m=window.testMap, layers=group==='roads'?['roads','roads-tentative']:[group];
+        // Evaluate the installed MapLibre filters over every source feature.
+        function evaluate(expr,p) {
+          if(!Array.isArray(expr)) return expr;
+          const [op,...args]=expr;
+          if(op==='literal') return args[0];
+          if(op==='get') return p[args[0]];
+          const a=args.map(e=>evaluate(e,p));
+          switch(op) {
+            case '==':return a[0]===a[1]; case 'in':return a[1].includes(a[0]);
+            case '!':return !a[0]; case 'all':return a.every(Boolean); case 'any':return a.some(Boolean);
+            default:throw Error('Unexpected map filter: '+op);
+          }
+        }
+        const filters=layers.map(id=>m.getFilter(id));
+        const fc=await m.getSource(group).getData();
+        return fc.features.filter(f=>filters.some(expr=>!expr || evaluate(expr,f.properties))).length;
+      },group);
+      assert.equal(visible,count);observed[group][value]=visible;
+    }
+  }
+  assert.equal(await page.locator('.key-coastal').isVisible(),false);
+  assert.equal(await page.locator('.key-conjectured').isVisible(),false);
+  assert.equal(await page.locator('.key-rank3').isVisible(),false);
+  await ports.uncheck();
+  assert.match(await countText('maritime'),/0 ports/);
+  assert.equal(await page.locator('.key-port').isVisible(),false);
+  assert.equal(await page.evaluate(()=>window.testMap.getLayoutProperty('ports','visibility')),'none');
+  await ports.check();assert.match(await countText('maritime'),/294 ports/);
+  await tier('settlements').selectOption('auto');
+  const zoomCounts=[];
+  for(const [z,n] of [[3.8,176],[4,992],[4.9,992],[5,1388],[6,1388]]) {
+    await page.evaluate(z=>window.testMap.jumpTo({zoom:z}),z);
+    assert.equal(await countText('settlements'),' ('+n.toLocaleString('en-US')+')');
+    zoomCounts.push([z,n]);
+  }
+  await tier('settlements').selectOption('major');
+  await page.evaluate(()=>window.testMap.jumpTo({zoom:6.5}));
+  assert.equal(await countText('settlements'),' (176)');
+  await tier('settlements').selectOption('all');
+  await tier('roads').selectOption('all'); await tier('maritime').selectOption('all');
+  const camera=()=>page.evaluate(()=>[...window.testMap.getCenter().toArray(),window.testMap.getZoom()]);
+  const roma='hanson:Hanson2016_992';
+  await page.evaluate(()=>{
+    const m=window.testMap,original=m.fitBounds;
+    window.testFits=0;m.fitBounds=function(...args){window.testFits++;return original.apply(this,args);};
+    m.jumpTo({center:[15,41],zoom:4});
+  });
+  const before=await camera();
+  await page.waitForFunction(()=>window.testMap.loaded());
+  const pos=await page.evaluate(()=>{
+    const {x,y}=window.testMap.project([12.485098,41.892777]); return {x,y};
+  });
+  const canvas=page.locator('#map canvas');
+  await canvas.hover({position:pos});
+  await page.waitForFunction(()=>document.querySelector('#map-hover').textContent==='Roma · Settlement (Rank 1)' &&
+    !document.querySelector('#map-hover').hidden);
+  assert.equal(await canvas.evaluate(c=>c.style.cursor),'pointer');
+  await canvas.click({position:pos});await loaded(roma);
+  const ids=await page.locator('#overlap-records button').evaluateAll(bs=>bs.map(b=>b.dataset.record));
+  assert.equal(ids[0],roma);assert(ids.length>1);
+  const ranks=await page.evaluate(async ids=>{
+    const fc=await window.testMap.getSource('settlements').getData();
+    const ranks=new Map(fc.features.map(f=>[f.properties.id,f.properties.rank]));
+    return ids.filter(id=>ranks.has(id)).map(id=>ranks.get(id));
+  },ids);
+  assert(ranks.length>1);
+  const rankOrder=rank=>({'1':0,'2':1,'3':2}[rank] ?? 3);
+  assert.deepEqual(ranks,[...ranks].sort((a,b)=>rankOrder(a)-rankOrder(b)));
+  assert.deepEqual(await camera(),before);await page.locator('#overlap-records button').nth(1).click();await loaded(ids[1]);
+  assert.deepEqual(await camera(),before);assert.equal(await page.evaluate(()=>window.testFits),0);
+  await open(roma);const located=await camera();assert.notDeepEqual(located,before);
+  assert.equal(await page.evaluate(()=>window.testFits),1);
+  await open('orbis:route:987571');
+  const related=page.locator('#record-content button[data-related]').first();
+  const destination=await related.getAttribute('data-related');await related.click();await loaded(destination);
+  assert.equal(await page.evaluate(()=>window.testFits),3);
+  await page.locator('#close-record').click();
+  assert.equal(await page.locator('#map-hover').isVisible(),false);
+  for(const id of ['settlements','roads','maritime']) await page.locator('[data-layer="'+id+'"]').uncheck();
+  await canvas.hover({position:pos});assert.equal(await page.locator('#map-hover').isVisible(),false);
+  for(const id of ['settlements','roads','maritime']) await page.locator('[data-layer="'+id+'"]').check();
+  // Isolate a lower-ranked city. Its native rank must control rendering, hits and highlighting together.
+  const isolated=await page.evaluate(async()=>{
+    const m=window.testMap,fc=await m.getSource('settlements').getData();
+    return fc.features.find(f=>f.properties.rank==='4 or 5' &&
+      fc.features.every(other=>other===f || Math.hypot(...other.geometry.coordinates.map((v,i)=>v-f.geometry.coordinates[i]))>0.4)).properties.id;
+  });
+  await open(isolated);
+  await page.locator('[data-layer=maritime]').uncheck();await page.locator('[data-layer=roads]').uncheck();
+  await page.locator('#close-record').click();
+  const isolatedPos=await page.evaluate(async id=>{
+    const m=window.testMap, city=(await m.getSource('settlements').getData()).features.find(f=>f.properties.id===id);
+    const [lng,lat]=city.geometry.coordinates;m.jumpTo({center:[lng+0.2,lat],zoom:5.7});
+    const {x,y}=m.project([lng,lat]);return {x,y};
+  },isolated);
+  const isolatedCamera=await camera();
+  await page.waitForFunction(()=>window.testMap.loaded());
+  await canvas.click({position:isolatedPos});await loaded(isolated);
+  assert.equal(await page.locator('#overlap-picker').isVisible(),false);assert.deepEqual(await camera(),isolatedCamera);
+  await tier('settlements').selectOption('major');
+  assert.deepEqual(await page.evaluate(async()=>(await window.testMap.getSource('selected-record').getData()).features),[]);
+  await page.locator('#close-record').click();await page.waitForFunction(()=>window.testMap.loaded());
+  await canvas.hover({position:isolatedPos});await canvas.click({position:isolatedPos});
+  assert.equal(await page.locator('#record-panel').isVisible(),false);
+  assert.equal(await page.locator('#map-hover').isVisible(),false);
+  assert.deepEqual(await camera(),isolatedCamera);
+  assert.equal(await page.evaluate(()=>window.testFits),4);
+  await tier('settlements').selectOption('all');
+  await page.locator('[data-layer=maritime]').check();await page.locator('[data-layer=roads]').check();
+  proof.detailFilters={counts:observed,autoByZoom:zoomCounts,manualAtZoom65:176,
+    hover:'Roma · Settlement (Rank 1)',overlapCityRanks:ranks,mapAndPickerCamera:before,searchCamera:located,
+    isolatedCity:isolated,isolatedClickCamera:isolatedCamera,filteredCityExcludedFromHits:true,
+    directAndPickerFitCalls:0,searchAndRelationFitCalls:3};
+}
+
+async function savedTiers(page,write) {
+  const settings={settlements:'major',maritime:'primary',roads:'certain'};
+  for(const [id,value] of Object.entries(settings)) {
+    const select=page.locator('[data-tier="'+id+'"]');
+    if(write) await select.selectOption(value);
+    assert.equal(await select.inputValue(),value);
+  }
+  const ports=page.locator('[data-sublayer=ports]');
+  if(write) await ports.check();
+  assert(await ports.isChecked());
+  assert.equal(await page.locator('[data-count=maritime]').textContent(),' (74 routes · 294 ports)');
+  assert.equal(await page.locator('[data-count=roads]').textContent(),' (1,040)');
+  assert.equal(await page.locator('[data-count=settlements]').textContent(),' (176)');
+}
+
+async function observeMap(page) {
   // Observe the map instance through its public API for this browser test only.
   await page.evaluate(async()=>{
     const {Map:GLMap}=await import('/vendor/maplibre-gl/maplibre-gl.mjs');
@@ -121,8 +267,23 @@ async function interactions(page) {
       return original.apply(this,args);
     };
   });
+  await page.locator('[value=simple]').check();
+  await page.locator('[value=natural]').check();
+  await page.waitForFunction(()=>window.testMap.loaded());
+  const startup=await page.evaluate(()=>{
+    const m=window.testMap;
+    const layers=['settlements','roads','maritime','ports'];
+    return Object.fromEntries(layers.map(id=>[id,new Set(m.queryRenderedFeatures({layers:[id]}).map(f=>f.properties.id)).size]));
+  });
+  assert(startup.settlements>0 && startup.roads>0 && startup.maritime>0 && startup.ports===0);
+  proof.defaultRendered=startup;
+}
+
+async function interactions(page) {
   const groups=['settlements','roads','maritime'];
   const toggle=g=>page.locator('[data-layer="'+g+'"]');
+  await page.locator('[data-tier=maritime]').selectOption('all');
+  await page.locator('[data-sublayer=ports]').check();
   for (let mask=0; mask<8; mask++) {
     for (const [i,g] of groups.entries()) await toggle(g).setChecked(Boolean(mask&(1<<i)));
     const shown=await page.evaluate(()=>{
@@ -152,6 +313,7 @@ async function interactions(page) {
     await page.waitForFunction(id=>window.testMap.loaded() &&
       window.testMap.queryRenderedFeatures({layers:[id]}).length>0,id);
   };
+  await tierInteractions(page,open,loaded);
   const selection=()=>page.evaluate(async()=>await window.testMap.getSource('selected-record').getData());
   const geometries={};
   for (const [id,type,group] of [
@@ -229,7 +391,7 @@ async function foundation(page,full) {
   await page.locator('#search-results button[data-record="pleiades:108542249"]').click();
   await loaded('pleiades:108542249');
   if (!full) return;
-  for(const box of await page.locator('#atlas-layers input').all()){await box.uncheck();await box.check();}
+  for(const box of await page.locator('[data-layer]').all()){await box.uncheck();await box.check();}
   await page.locator('#search-source').selectOption('pleiades');
   await search.fill('Roma');
   assert.equal(await page.locator('#search-results button').first().getAttribute('data-record'),'pleiades:423025');
@@ -310,11 +472,14 @@ try {
   if (!publicURL) await serve();
   let page = await launch(1440);
   await layout(page, 1440);
+  await observeMap(page);
+  if (process.env.ATLAS_SCREENSHOT) await page.screenshot({path:process.env.ATLAS_SCREENSHOT});
+  assert.deepEqual(await page.locator('[data-tier]').evaluateAll(ns=>ns.map(n=>n.value)),['auto','all','open']);
+  assert.equal(await page.locator('[data-sublayer=ports]').isChecked(),false);
   await foundation(page,true);
   await interactions(page);
   await guide(page,1440);
   await controls(page);
-  if (process.env.ATLAS_SCREENSHOT) await page.screenshot({ path: process.env.ATLAS_SCREENSHOT });
   {
     await page.setViewportSize({ width: 390, height: 844 });
     await layout(page, 390);
@@ -322,12 +487,14 @@ try {
     await controls(page);
   }
   if (!publicURL) {
+    await savedTiers(page,true);
     await page.locator('#download').click();
     await page.getByText('Both maps are verified and ready offline.', { exact: true }).waitFor();
     await context.close();
     await new Promise(resolve => server.close(resolve));
     server = null;
     page = await launch(390, true);
+    await savedTiers(page,false);
     await layout(page, 390);
     await guide(page,390);
     await foundation(page,false);
@@ -348,7 +515,7 @@ try {
   assert.deepEqual([...external], []);
   assert.deepEqual([...errors], []);
   console.log(JSON.stringify({ site: origin, chromium:context.browser()?.version(), desktop: 'pass', narrow: 'pass',
-    offlineBrowserRestartWithServerStopped: publicURL ? undefined : 'pass', foundation:proof, externalRequests: 0, errors: 0 }));
+    offlineBrowserRestartWithServerStopped: publicURL ? undefined : 'pass', offlineTiersRetained:publicURL?undefined:{settlements:176,roads:1040,maritime:74,ports:294}, foundation:proof, externalRequests: 0, errors: 0 }));
 } finally {
   await context?.close();
   if (server?.listening) await new Promise(resolve => server.close(resolve));

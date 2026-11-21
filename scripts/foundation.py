@@ -94,7 +94,7 @@ class Package:
         self.relations = []
         self.ids = set()
 
-    def add(self, id_, label, source, kind, native, geometry=None, aliases=None, layer=None, notes=None, related=None, tolerance=0):
+    def add(self, id_, label, source, kind, native, geometry=None, aliases=None, layer=None, notes=None, related=None, tolerance=0, map_fields=None):
         assert source in self.allowed_sources, 'Excluded source cannot enter the runtime package'
         assert id_ not in self.ids, f'Duplicate identity: {id_}'
         self.ids.add(id_)
@@ -106,7 +106,7 @@ class Package:
             index['bbox'] = bbox
             if layer:
                 self.layers[layer].append({'type': 'Feature', 'id': id_,
-                    'properties': {'id': id_, 'label': label, 'source': source, 'kind': kind}, 'geometry': simple})
+                    'properties': {'id': id_, 'label': label, 'source': source, 'kind': kind, **(map_fields or {})}, 'geometry': simple})
         detail = {'id': id_, 'native': native}
         if geometry: detail['geometry'] = geometry
         if notes: detail['notes'] = notes
@@ -150,7 +150,7 @@ def cities(package, record):
         id_ = 'hanson:' + row['Primary Key']
         geometry = {'type': 'Point', 'coordinates': [float(row['Longitude (X)']), float(row['Latitude (Y)'])]}
         _, detail = package.add(id_, row['Ancient Toponym'], 'hanson-cities', 'Settlement', row, geometry,
-                    aliases=[row['Modern Toponym']], layer='settlements', related=dict(joins[row['Primary Key']]),
+                    aliases=[row['Modern Toponym']], layer='settlements', map_fields={'rank': row['Barrington Atlas Rank']}, related=dict(joins[row['Primary Key']]),
                     notes=['Native table joins use Primary Key. No supplied Pleiades or ORBIS identity crosswalk. NULL dates remain unknown.',
                            'Areas, civic status and monuments retain source rows, including repeated entries.'])
         detail['citations'] = [resolve(token.strip().rstrip('.')) for token in row['Select Bibliography'].split(';') if token.strip().rstrip('.')]
@@ -186,7 +186,7 @@ def maritime(package, record):
         attrs = native['properties']; start, end = endpoint(attrs['sid']), endpoint(attrs['tid'])
         title = f'{sites.get(start, {}).get("label", start)} → {sites.get(end, {}).get("label", end)} · {attrs["t"]}'
         id_ = 'orbis:route:' + str(attrs['gid'])
-        package.add(id_, title, 'orbis-maritime', 'Maritime route', attrs, geometry, layer='maritime',
+        package.add(id_, title, 'orbis-maritime', 'Maritime route', attrs, geometry, layer='maritime', map_fields={'t': attrs['t']},
                     notes=['Research transport-model geometry, not observed trade volume. Original sid/tid mode nodes are retained.',
                            'Includes coastal, overseas, slowover and ferry modes; parallel fast/slow routes remain separate.'], tolerance=0.0005)
         package.relation(id_, 'orbis:place:' + start, 'source-endpoint', 'ORBIS sid; upstream six-digit mode-prefix rule')
@@ -244,10 +244,10 @@ def roads(package, record):
         if connector: connectors.append(native_id)
         _, detail = package.add('itinere:17122148:' + native_id, attrs.get('Name') or 'Unnamed road ' + native_id,
             'itinere', 'Source ferry connector' if connector else 'Road segment', attrs, geometry, aliases=[native_id], layer='roads', tolerance=0.001,
+            map_fields={'certainty':attrs['Segment_s'], 'ferry':bool(connector)},
             notes=['Frozen 2024 geometry, release v1.3. This export has no Pleiades proximity field or endpoint IDs.',
                    'Source Segment_s uncertainty and native date sentinels remain unchanged; no inferred city attachment.'])
         display = package.layers['roads'][-1]
-        display['properties'].update(certainty=attrs['Segment_s'], ferry=bool(connector))
         detail['geometry'] = display['geometry']
         detail['native_geometry'] = feature['geometry']; detail['native_crs'] = document['crs']
         detail['date_bounds'] = {key: None if attrs[key] in [0, 9999, None] else attrs[key] for key in ['Lower_Date', 'Upper_Date']}
