@@ -18,7 +18,7 @@ export function relationIndex(edges,byID) {
   return neighbors;
 }
 
-export async function mountFoundation(map,release,load,preferences={},persist=()=>{},sourcesById=new Map()) {
+export async function mountFoundation(map,release,load,preferences={},persist=()=>{},sourcesById=new Map(),reloadAtlas) {
   const {datasets,groups}=registry(release);
   if (!datasets.length) return;
   const sources=new Map(datasets.map(d=>[d.id,d.label]));
@@ -216,7 +216,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
       if (turn!==generation) return;
       body.replaceChildren(element('p',error.message));
       if (error.status===404) {
-        const reload=element('button','Reload'); reload.onclick=()=>location.reload(); body.append(reload);
+        const reload=element('button','Reload'); reload.onclick=reloadAtlas; body.append(reload);
       }
     }
   }

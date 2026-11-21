@@ -98,7 +98,7 @@ async function render() {
     const stream=file.stream().pipeThrough(new DecompressionStream('gzip'));
     return new Response(stream).json();
   },await readState('layers').catch(()=>null),layers=>writeState('layers',layers).catch(()=>{}),
-    new Map(sources.sources.map(source=>[source.id,source])));
+    new Map(sources.sources.map(source=>[source.id,source])),reloadAtlas);
   const ready=()=>{ $('#map').dataset.ready=String($('#map-error').hidden); };
   map.on('idle',ready);
   if (map.loaded()) ready();
@@ -218,12 +218,13 @@ window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault(); installPrompt = event; $('#install').hidden = false;
 });
 $('#install').onclick = async () => { await installPrompt?.prompt(); $('#install').hidden = true; };
-$('#update-app').onclick = () => {
+function reloadAtlas() {
   $('#update-app').disabled=true;
   if (!registration?.waiting) { location.reload(); return; }
   navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
   registration.waiting.postMessage('activate');
-};
+}
+$('#update-app').onclick = reloadAtlas;
 
 async function checkForUpdate() {
   try {

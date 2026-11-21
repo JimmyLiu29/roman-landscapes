@@ -20,6 +20,7 @@ const errors = new Set(), external = new Set();
 // Serve the actual static response policy, with controlled future releases for lifecycle tests.
 const rules=[];
 let update, override, base, oldPort, missingDetail;
+const shellFixtures = new Map();
 function headers(pathname) {
   const result={};
   for (const {pattern,values} of rules) {
@@ -45,7 +46,8 @@ async function serve() {
     if (!file.startsWith(dist) || pathname===missingDetail) { res.writeHead(404).end(); return; }
     try {
       let data;
-      if (update && pathname==='/release.json') data=JSON.stringify(update);
+      if (shellFixtures.has(pathname)) data=await shellFixtures.get(pathname);
+      else if (update && pathname==='/release.json') data=JSON.stringify(update);
       else if (override && pathname===override.path) data=override.bytes;
       else data=await readFile(file);
       res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', ...headers(pathname) }).end(data);
@@ -718,10 +720,81 @@ async function prepareUpdate(fault) {
   }
 }
 
-async function staleDetail() {
-  const tab=await context.newPage();
+// Model the old startup order and the old worker's network-first manifest.
+async function legacyApp() {
+  const release=await (await fetch('/release.json')).json();
+  const allowed=new Set(['land.geojson','ocean.geojson','lakes.geojson','rivers.geojson','relief.pmtiles',
+    'sources.json','catalog.json.gz','relations.json.gz','settlements.geojson.gz','roads.geojson.gz',
+    'maritime.geojson.gz','ports.geojson.gz']);
+  const shard=/^details-(?:hanson-cities|itinere|orbis-maritime|pleiades)-\d{3,}\.json\.gz$/;
+  const names=release.files.map(file=>file.path.split('/').pop());
+  if (names.some(name=>!allowed.has(name) && !shard.test(name))) {
+    const error=document.querySelector('#map-error');
+    error.textContent='Unexpected map package contents.';
+    error.hidden=false;
+    return;
+  }
+  await navigator.serviceWorker.register('/sw.js');
+}
+
+function legacyWorker() {
+  const name='atlas-shell-legacy';
+  self.oninstall=event=>event.waitUntil(caches.open(name).then(cache=>cache.addAll(['/','/app.js','/release.json'])));
+  self.onactivate=event=>event.waitUntil(self.clients.claim());
+  self.onfetch=event=>{
+    if (new URL(event.request.url).pathname==='/release.json') {
+      event.respondWith(fetch(event.request).catch(()=>caches.match('/release.json',{cacheName:name})));
+      return;
+    }
+    const key=event.request.mode==='navigate' ? '/' : event.request;
+    event.respondWith(caches.match(key,{cacheName:name}).then(hit=>hit || fetch(event.request)));
+  };
+}
+
+async function shellTransitions() {
+  console.error('Checking legacy shell takeover and waiting-worker detail reload');
+  const visitor=await context.browser().newContext();
+  visitor.setDefaultTimeout(30000);
+  const tab=await visitor.newPage();
+  const url=origin+'/?visit=returning';
+  const worker=await readFile(path.join(dist,'sw.js'));
+  let serveWorker;
+  const rollout=new Promise(resolve=>{ serveWorker=()=>resolve(worker); });
+  try {
+    const legacy=structuredClone(base);
+    delete legacy.view_bounds;
+    legacy.view_zoom=[2,7];
+    legacy.files=legacy.files.filter(file=>!file.path.endsWith('/coast.geojson'));
+    legacy.bytes=legacy.files.reduce((sum,file)=>sum+file.bytes,0);
+    shellFixtures.set('/release.json',JSON.stringify(legacy));
+    shellFixtures.set('/app.js',`(${legacyApp})();`);
+    shellFixtures.set('/sw.js',`(${legacyWorker})();`);
+    await tab.goto(url);
+    await tab.waitForFunction(()=>!!navigator.serviceWorker.controller);
+    shellFixtures.clear();
+    // Hold the returning navigation's browser-initiated update check until the error is visible.
+    shellFixtures.set('/sw.js',rollout);
+    await tab.reload();
+    await tab.getByText('Unexpected map package contents.',{exact:true}).waitFor();
+    shellFixtures.clear();
+    serveWorker();
+    await tab.locator('#map[data-ready=true]').waitFor({timeout:60000});
+    assert.equal(tab.url(),url);
+    assert.equal(await tab.evaluate(()=>caches.has('atlas-shell-legacy')),false);
+    proof.legacyShellTakeover=true;
+    await staleDetail(visitor,true);
+  } finally {
+    serveWorker();
+    shellFixtures.clear();
+    update=null;
+    await visitor.close();
+  }
+}
+
+async function staleDetail(browserContext=context, withWaitingWorker=false) {
+  const tab=await browserContext.newPage();
   // Model a tab requesting a shard it has never cached.
-  const network=await context.newCDPSession(tab);
+  const network=await browserContext.newCDPSession(tab);
   await network.send('Network.enable');
   await network.send('Network.setCacheDisabled',{cacheDisabled:true});
   const shard=base.files.find(f=>f.path.includes('/details-pleiades-075.'));
@@ -736,12 +809,23 @@ async function staleDetail() {
     };
     await open();
     await tab.getByText('A newer atlas release is online. Reload to open this record.').waitFor();
-    missingDetail=null;
-    await tab.locator('#record-content').getByRole('button',{name:'Reload',exact:true}).click();
+    if (withWaitingWorker) {
+      await prepareUpdate('complete');
+      const worker=await readFile(path.join(dist,'sw.js'),'utf8');
+      shellFixtures.set('/sw.js',worker.replace(/atlas-shell-[0-9a-f]{16}/,'atlas-shell-test-next'));
+      await tab.evaluate(async()=>(await navigator.serviceWorker.ready).update().then(()=>true));
+      await tab.locator('#update-app').waitFor();
+      assert(await tab.evaluate(async()=>!!(await navigator.serviceWorker.ready).waiting));
+    } else missingDetail=null;
+    await Promise.all([tab.waitForNavigation(),tab.locator('#record-content').getByRole('button',{name:'Reload',exact:true}).click()]);
     await tab.locator('#map[data-ready=true]').waitFor();
+    if (withWaitingWorker) {
+      assert.equal(await tab.evaluate(async()=>(await (await fetch('/release.json')).json()).id),update.id);
+    }
     await open();
     await tab.locator('#record-panel[data-loaded="'+id+'"]').waitFor();
-    proof.staleDetailRecovery=true;
+    if (withWaitingWorker) proof.staleDetailActivatedWaitingWorker=true;
+    else proof.staleDetailRecovery=true;
   } finally { missingDetail=null; await tab.close(); }
 }
 
@@ -871,6 +955,7 @@ async function damagedPackage(page) {
 try {
   if (!publicURL) await serve();
   let page = await launch(1440);
+  if (!publicURL) await shellTransitions();
   await layout(page, 1440);
   await observeMap(page);
   if (process.env.ATLAS_SCREENSHOT) await page.screenshot({path:process.env.ATLAS_SCREENSHOT});
