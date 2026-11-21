@@ -1,3 +1,4 @@
+import { registry } from './layers.js';
 const DB = 'roman-atlas';
 const STORE = 'state';
 const ROOT = 'atlas-packages';
@@ -52,7 +53,14 @@ export function validateManifest(release) {
   }
   if (total !== release.bytes) throw new Error('Package size does not match the manifest.');
   const required = ['land.geojson', 'ocean.geojson', 'lakes.geojson', 'rivers.geojson', 'relief.pmtiles', 'sources.json'];
-  if (paths.size !== required.length || required.some(name => !paths.has(`packs/${release.id}/${name}`))) {
+  const {datasets,groups,optionalFiles}=registry(release);
+  const active=datasets.map(dataset=>dataset.id);
+  if (active.length) required.push('catalog.json.gz','relations.json.gz',
+    ...groups.flatMap(group=>group.sources.map(source=>source.id+'.geojson.gz')));
+  const names=[...paths].map(path=>path.slice(('packs/'+release.id+'/').length));
+  const shard=name=>active.some(source=>name.startsWith('details-'+source+'-') && /^\d{3,}\.json\.gz$/.test(name.slice(('details-'+source+'-').length)));
+  if (required.some(name=>!names.includes(name)) || names.some(name=>!required.includes(name) && !optionalFiles.has(name) && !shard(name))
+      || active.some(source=>!names.some(name=>name.startsWith('details-'+source+'-')))) {
     throw new Error('Unexpected map package contents.');
   }
   return release;

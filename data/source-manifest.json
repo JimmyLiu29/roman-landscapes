@@ -160,6 +160,107 @@
       "terms": "Public domain",
       "terms_url": "https://www.naturalearthdata.com/about/terms-of-use/",
       "url": "https://naturalearth.s3.amazonaws.com/10m_physical/ne_10m_lakes.zip"
+    },
+    {
+      "bytes": 360677,
+      "citation": "Hanson, J. W. (2016), Cities Database, version 1.0; An Urban Geography of the Roman World, 100 BC to AD 300, Archaeopress.",
+      "id": "hanson-cities",
+      "landing_url": "https://oxrep.web.ox.ac.uk/cities-database",
+      "path": "data/raw/hanson-cities/hanson2016_citiesdatabase_oxrep.xlsx",
+      "publisher": "Oxford Roman Economy Project",
+      "sha256": "5b9fc0195c3b5f2df71d6380174974215280cafd3bf5fa463fbf96969b549b6c",
+      "terms": "Publisher requests citation of database and monograph; no standard redistribution license verified",
+      "terms_url": "https://oxrep.web.ox.ac.uk/cities-database",
+      "url": "https://oxrep.web.ox.ac.uk/sites/default/files/oxrep/documents/media/hanson2016_citiesdatabase_oxrep.xlsx",
+      "version": "1.0 (2016)",
+      "label": "Oxford Hanson Cities"
+    },
+    {
+      "assets": [
+        {
+          "bytes": 8481492,
+          "path": "data/raw/pleiades/pleiades-v4.1-names.csv",
+          "sha256": "04716712d78dce2b43c9d093ba908d8397ee17496ffec8644e84a4bad1dac02d",
+          "url": "https://raw.githubusercontent.com/isawnyu/pleiades.datasets/v4.1/data/gis/names.csv"
+        }
+      ],
+      "bytes": 16048687,
+      "citation": "Pleiades contributors, Pleiades datasets, release v4.1 (2025-05-28). Regional subset and source-native name joins.",
+      "id": "pleiades",
+      "landing_url": "https://pleiades.stoa.org/",
+      "path": "data/raw/pleiades/pleiades-v4.1-places.csv",
+      "publisher": "Pleiades / Institute for the Study of the Ancient World",
+      "sha256": "5dd09b1a92c53e50cb9962bab44df12c5f0b7b683d4f228367d843637cfe5a59",
+      "terms": "CC BY 3.0",
+      "terms_url": "https://github.com/isawnyu/pleiades.datasets/releases/tag/v4.1",
+      "url": "https://raw.githubusercontent.com/isawnyu/pleiades.datasets/v4.1/data/gis/places.csv",
+      "version": "4.1 (2025-05-28)",
+      "label": "Pleiades"
+    },
+    {
+      "assets": [
+        {
+          "bytes": 40907,
+          "path": "data/raw/orbis-maritime/o_sites.csv",
+          "sha256": "4a986548808f5732fa0c118ede2a74f62840e9df902a3bfcd82316baa00c3ebc",
+          "url": "https://raw.githubusercontent.com/sul-cidr/orbis_pub/1bb7cde24774f6dce6b40e29445e7b42d4d942d0/o_sites.csv"
+        },
+        {
+          "bytes": 138917,
+          "path": "data/raw/orbis-maritime/orbis.js",
+          "sha256": "4b18ae0841f328dc1b0e840e56c50d24ec8b03ab4aeb9763f9ff5a3626c7ebd1",
+          "url": "https://raw.githubusercontent.com/sul-cidr/orbis_pub/1bb7cde24774f6dce6b40e29445e7b42d4d942d0/orbis.js"
+        },
+        {
+          "bytes": 1079,
+          "path": "data/raw/orbis-maritime/LICENSE",
+          "sha256": "36ebaece1eded4daf43020769cef53c55e09bfd5a3469055e3b317d4b024c0aa",
+          "url": "https://raw.githubusercontent.com/sul-cidr/orbis_pub/1bb7cde24774f6dce6b40e29445e7b42d4d942d0/LICENSE"
+        }
+      ],
+      "bytes": 401420,
+      "citation": "ORBIS v2, Stanford Geospatial Network Model of the Roman World, fixed public application geometry and native node table.",
+      "id": "orbis-maritime",
+      "landing_url": "https://orbis.stanford.edu/",
+      "notice": "The MIT License (MIT)\n\nCopyright (c) 2013 Elijah Meeks\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of\nthis software and associated documentation files (the \"Software\"), to deal in\nthe Software without restriction, including without limitation the rights to\nuse, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of\nthe Software, and to permit persons to whom the Software is furnished to do so,\nsubject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS\nFOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR\nCOPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER\nIN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN\nCONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n",
+      "path": "data/raw/orbis-maritime/new_routes.topojson",
+      "publisher": "Stanford Libraries CIDR",
+      "sha256": "d8ea818898c187ac3b6f5bb200ad8c97b70ce960bfb128b35d41ff3ba91186e8",
+      "terms": "Upstream repository MIT notice retained; separate SDR 2014 node/edge table is CC BY 3.0 and does not provide route geometry",
+      "terms_url": "https://github.com/sul-cidr/orbis_pub/blob/1bb7cde24774f6dce6b40e29445e7b42d4d942d0/LICENSE",
+      "url": "https://raw.githubusercontent.com/sul-cidr/orbis_pub/1bb7cde24774f6dce6b40e29445e7b42d4d942d0/new_routes.topojson",
+      "version": "v2 repository revision 1bb7cde24774f6dce6b40e29445e7b42d4d942d0",
+      "label": "Stanford ORBIS Maritime"
+    },
+    {
+      "assets": [
+        {
+          "bytes": 18004,
+          "path": "data/raw/itinere/field-description-early.docx",
+          "role": "fields",
+          "sha256": "0f486847ab54e2675bbd9b0087998c0833f0e22876459a6d82b6c4c30485359a",
+          "url": "https://zenodo.org/records/17122148/files/Data%20field%20description.docx?download=1"
+        },
+        {
+          "bytes": 248702,
+          "path": "data/raw/itinere/Itiner-e bibliography.bib",
+          "role": "bibliography",
+          "sha256": "8c819a8238664666042b1f538dc319f364f13358715322b40d29bac21ec3b0a7",
+          "url": "https://zenodo.org/records/17122148/files/Itiner-e%20bibliography.bib?download=1"
+        }
+      ],
+      "bytes": 78054413,
+      "citation": "de Soto, P., Pažout, A., Brughmans, T. et al. (2025), Itiner-e: A high-resolution dataset of roads of the Roman Empire, Scientific Data 12, 1731. doi:10.1038/s41597-025-06140-z. Dataset v1.3, doi:10.5281/zenodo.17122148.",
+      "id": "itinere",
+      "landing_url": "https://zenodo.org/records/17122148",
+      "path": "data/raw/itinere/itinere_roads.geojson",
+      "publisher": "Itiner-e / Zenodo",
+      "sha256": "4f8f5cf99f387bab2c509b1bf50143e9a3117691e316f2f46a9bb1d3d4b1cc34",
+      "terms": "CC BY 4.0; source geometry transformed and display geometry simplified",
+      "terms_url": "https://zenodo.org/records/17122148",
+      "url": "https://zenodo.org/records/17122148/files/itinere_roads.geojson?download=1",
+      "version": "v1.3; static version 2024; published 2025-09-15",
+      "label": "Itiner-e"
     }
   ]
 }

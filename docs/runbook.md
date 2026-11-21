@@ -1,0 +1,9 @@
+# Local build and verification
+
+From the repository root, create a Python environment and install the pinned dependencies as shown in the README. Run `bin/acquire` to restore the four Natural Earth inputs and ten foundation files into `data/raw/`. The acquisition checks each input against the source manifest. Once these files and the vendored browser libraries are available the build runs offline.
+
+Run `bin/build` and `bin/verify-project`. The build creates the shaded-relief PMTiles archive, four physical vectors, four foundation geometry collections, catalog, relations, detail shards and source credits. It embeds the application shell inventory in the service worker. Verification checks release bounds, checksums, feature IDs, file inventories and relief tiles. Run `bin/serve` and open http://127.0.0.1:4173.
+
+For browser regression, install Playwright with Chromium and run `node tests/browser.mjs`. The harness serves the local build on a loopback port, exercises map interaction and both reading panels, saves the complete package, stops the server and restarts Chromium offline. Set `PLAYWRIGHT_MODULE` or `CHROMIUM_PATH` when using an existing installation. Supplying the deployed origin as an argument runs anonymous online checks against that origin.
+
+The application stores verified package files in origin-private file storage. To use the atlas offline, select **Enable offline use** and wait for verification. **Verify saved maps** rechecks each saved file. **Remove saved maps** clears the package. After an application update, a browser with an earlier saved data scope can remove the saved maps and reload online to obtain the current release.

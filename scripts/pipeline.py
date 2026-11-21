@@ -11,6 +11,9 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / 'scripts'))
+from foundation import SOURCES, build_foundation
+
 RAW = ROOT / 'data/raw'
 WEB = ROOT / 'web'
 DIST = ROOT / 'dist'
@@ -139,17 +142,24 @@ def relief_tiles(out, manifest):
 
 
 
-SCOPE = ['simple-base', 'natural-base', 'source-credits']
+SCOPE = ['simple-base', 'natural-base', 'source-credits', *SOURCES]
 VECTORS = {'land': {'Polygon', 'MultiPolygon'}, 'rivers': {'LineString', 'MultiLineString'},
            'lakes': {'Polygon', 'MultiPolygon'}, 'ocean': {'Polygon', 'MultiPolygon'}}
 PACK = {f'{layer}.geojson' for layer in VECTORS} | {'relief.pmtiles', 'sources.json'}
-SHELL = {'_headers', 'app.js', 'style.css', 'storage.js', 'index.html', 'sw.js', 'manifest.webmanifest',
+FOUNDATION_FILES = {'catalog.json.gz','relations.json.gz'} | {f'{k}.geojson.gz' for k in ('settlements','roads','ports','maritime')}
+SHELL = {'layers.js', 'guide.js', 'foundation.js', 'search.js', 'details.js', '_headers', 'app.js', 'style.css', 'storage.js', 'index.html', 'sw.js', 'manifest.webmanifest',
          'icon-192.png', 'icon-512.png'}
 
 
+def input_files(manifest):
+    for source in manifest["sources"]:
+        yield source
+        yield from source.get("assets", [])
+
+
 def acquire():
-    """Restore the four locked public-domain inputs for a fresh checkout."""
-    for record in json.loads(MANIFEST.read_bytes())['sources']:
+    """Restore primary inputs and companion files, verifying each snapshot hash."""
+    for record in input_files(json.loads(MANIFEST.read_bytes())):
         path = ROOT / record['path']
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
@@ -168,9 +178,9 @@ def acquire():
 def check_inputs():
     manifest = json.loads(MANIFEST.read_bytes())
     assert {r['id'] for r in manifest['sources']} == {
-        'natural-earth-' + name for name in ['relief', 'land', 'rivers', 'lakes']}
-    for record in manifest['sources']:
-        assert digest(ROOT / record['path']) == record['sha256'], record['id']
+        'natural-earth-' + name for name in ['relief', 'land', 'rivers', 'lakes']} | set(SOURCES)
+    for record in input_files(manifest):
+        assert digest(ROOT / record['path']) == record['sha256'], record['path']
     vendors = json.loads((ROOT / 'data/vendor-lock.json').read_bytes())
     for name, expected in vendors.items():
         assert digest(WEB / name) == expected, name
@@ -189,15 +199,17 @@ def build():
     stage.mkdir(parents=True)
     physical_vectors(stage, manifest)
     relief_tiles(stage, manifest)
+    build_foundation(stage, manifest)
     write_json(stage / 'sources.json', {'sources': [
         {k: v for k, v in record.items() if k != 'path'} for record in manifest['sources']]})
     hashes = {p.name: digest(p) for p in sorted(stage.iterdir())}
-    version = 'base-' + hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()[:16]
+    version = 'foundation-' + hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()[:16]
     dest = stage.rename(stage.with_name(version))
     files = [{'path': f'packs/{version}/{name}', 'bytes': (dest / name).stat().st_size,
-              'sha256': value, 'kind': 'archive' if name.endswith('.pmtiles') else 'json'}
+              'sha256': value, 'kind': 'archive' if name.endswith('.pmtiles') else 'gzip-json' if name.endswith('.gz') else 'json'}
              for name, value in hashes.items()]
     write_json(DIST / 'release.json', {'schema': 1, 'app_schema': 1, 'scope': SCOPE, 'id': version,
+               'datasets': [{'id':r['id'], 'label':r['label']} for r in manifest['sources'] if r['id'] in SOURCES],
                'bounds': BOUNDS, 'tile_zoom': [0, 6], 'view_zoom': [2, 7],
                'files': files, 'bytes': sum(f['bytes'] for f in files)})
     cached = sorted((shell | {'release.json'}) - {'sw.js', '_headers'})
@@ -220,11 +232,18 @@ def verify():
     assert release['scope'] == SCOPE and release['bounds'] == BOUNDS
     assert release['tile_zoom'] == [0, 6] and release['view_zoom'] == [2, 7]
     prefix = 'packs/' + release['id'] + '/'
-    expected = shell | {'release.json'} | {prefix + name for name in PACK}
+    import gzip
+    pack = DIST / prefix
+    with gzip.open(pack / 'catalog.json.gz','rt') as file:
+        catalog = json.load(file)['records']
+    assert len(catalog) == len({r['id'] for r in catalog}) == 49711
+    shards = {r['detail'] for r in catalog}
+    package_files = PACK | FOUNDATION_FILES | shards
+    expected = shell | {'release.json'} | {prefix + name for name in package_files}
     paths = {str(p.relative_to(DIST)): p for p in DIST.rglob('*') if p.is_file()}
     assert set(paths) == expected and len(paths) <= 20000
     assert max(p.stat().st_size for p in paths.values()) <= 25 * 1024 ** 2
-    assert {f['path'] for f in release['files']} == {prefix + name for name in PACK}
+    assert {f['path'] for f in release['files']} == {prefix + name for name in package_files}
     assert release['bytes'] == sum(f['bytes'] for f in release['files'])
     for item in release['files']:
         path = paths[item['path']]

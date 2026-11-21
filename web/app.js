@@ -1,3 +1,4 @@
+import { mountFoundation } from './foundation.js';
 import * as maplibregl from './vendor/maplibre-gl/maplibre-gl.mjs';
 import { activeRelease, downloadRelease, fileHash, localFile, readState, recoverDownloads,
   removeDownloads, validateManifest, writeState } from './storage.js';
@@ -77,12 +78,18 @@ async function render() {
     $('#map-error').hidden = false;
   });
   map.on('idle', () => { $('#map').dataset.ready = String($('#map-error').hidden); });
-  map.once('load', () => { $('#reset').disabled = false; coordinates(); });
+  await new Promise(resolve => map.once('load',resolve));
+  await mountFoundation(map,release,async name => {
+    const file=await content(name);
+    const stream=file.stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Response(stream).json();
+  },await readState('layers').catch(()=>null),layers=>writeState('layers',layers).catch(()=>{}));
+  $('#reset').disabled=false; coordinates();
   const names = { relief: 'Shaded Relief', land: 'Land', rivers: 'Rivers and Lake Centerlines', lakes: 'Lakes' };
   for (const record of sources.sources) {
     const link = document.createElement('a');
-    link.href = record.url;
-    link.textContent = names[record.id.replace('natural-earth-', '')] + ' · ' + record.archive_version;
+    link.href = record.landing_url || record.url;
+    link.textContent = (record.label || names[record.id.replace('natural-earth-', '')]) + ' · ' + (record.archive_version || record.version);
     const row = document.createElement('li');
     row.append(link);
     $('#credits').append(row);
@@ -93,7 +100,7 @@ async function render() {
 function packageControls() {
   $('#download').textContent = saved ? 'Verify saved maps' : 'Enable offline use';
   $('#remove').hidden = !saved;
-  $('#package-description').textContent = `Both base maps and sources · ${(release.bytes / 1048576).toFixed(1)} MiB`;
+  $('#package-description').textContent = `Maps and selected datasets · ${(release.bytes / 1048576).toFixed(1)} MiB`;
 }
 for (const radio of document.querySelectorAll('[name=mode]')) {
   radio.onchange = () => { mode(radio.value); writeState('mode', radio.value).catch(() => {}); };
