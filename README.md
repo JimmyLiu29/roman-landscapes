@@ -10,7 +10,7 @@
 
 - **Dual Physical Base Maps (Natural Earth `10m`)**:
   - *Simple Geography*: High-contrast land and sea contours across `17°W–55°E, 15°N–63°N`.
-  - *Natural Geography*: 258 pre-rendered WebP shaded relief tiles (`z0–z6`, viewable to `z7`), 232 major river centerlines, and 156 natural lakes (with modern artificial canals and reservoirs excluded).
+  - *Natural Geography*: 394 pre-rendered WebP shaded relief tiles (`z0–z6`, viewable to `z7`), 318 river features, and 230 lake features (with modern artificial canals and reservoirs excluded).
 - **Urban Settlements (Oxford Hanson Cities `v1.0`, 2016)**:
   - `1,388` cities and towns of the Roman world (`100 BCE–300 CE`), joined with native subtables for walled/built-up areas (`885`), civic status (`2,201`), public monuments (`9,472`), and source bibliography (`47`).
 - **Terrestrial Road Network (Itiner-e `v1.3`, 2025)**:

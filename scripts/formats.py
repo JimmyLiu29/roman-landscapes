@@ -8,12 +8,22 @@ NS = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
 REL = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'
 
 
+def cell_text(node):
+    parts = []
+    for child in node:
+        if child.tag == '{%s}t' % NS['s']:
+            parts.append(child.text or '')
+        elif child.tag == '{%s}r' % NS['s']:
+            parts.extend(t.text or '' for t in child.findall('s:t', NS))
+    return ''.join(parts)
+
+
 def xlsx_sheets(path):
     """Keep stored scalar text, blank cells and sheet row numbers, without date coercion."""
     with zipfile.ZipFile(path) as archive:
         strings = []
         if 'xl/sharedStrings.xml' in archive.namelist():
-            strings = [''.join(n.itertext()) for n in ET.fromstring(archive.read('xl/sharedStrings.xml')).findall('s:si', NS)]
+            strings = [cell_text(n) for n in ET.fromstring(archive.read('xl/sharedStrings.xml')).findall('s:si', NS)]
         targets = {r.get('Id'): posixpath.normpath(posixpath.join('xl', r.get('Target'))).lstrip('/')
                    for r in ET.fromstring(archive.read('xl/_rels/workbook.xml.rels'))}
         result = {}
@@ -26,7 +36,7 @@ def xlsx_sheets(path):
                     value = cell.findtext('s:v', '', NS)
                     if cell.get('t') == 's': value = strings[int(value)] if value else ''
                     if cell.get('t') == 'inlineStr':
-                        value = ''.join(cell.find('s:is', NS).itertext())
+                        value = cell_text(cell.find('s:is', NS))
                     cells[re.sub(r'\d+', '', cell.get('r'))] = value
                 if any(value != '' for value in cells.values()): rows.append({'row': int(row.get('r')), 'cells': cells})
             result[sheet.get('name')] = rows
@@ -41,10 +51,10 @@ def table_rows(rows, header_row=1):
         if row['row'] > header_row:
             for col, value in row['cells'].items():
                 if value and col not in columns: columns[col] = ''
-    labels, used = {}, set()
+    labels, used = {}, {'source_row'}
     for col, name in columns.items():
         label = name or f'Column {col}'
-        if label in used: label += f' [{col}]'
+        while label in used: label += f' [{col}]'
         labels[col] = label; used.add(label)
     return [{'source_row': row['row'], **{label: row['cells'].get(col, '') for col, label in labels.items()}}
             for row in rows if row['row'] > header_row]

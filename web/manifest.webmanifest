@@ -7,7 +7,7 @@
   "display": "standalone",
   "background_color": "#faf9f5",
   "theme_color": "#183d42",
-  "description": "Physical geography of the Roman world in two base maps.",
+  "description": "Explore Roman settlements, roads, maritime routes and ancient place names on two offline-capable maps.",
   "icons": [
     {
       "src": "/icon-192.png",

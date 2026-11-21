@@ -8,7 +8,7 @@
           8100
         ],
         "tile_pixels": 256,
-        "tiles": 258
+        "tiles": 394
       },
       "advertised_version": "3.2.0",
       "archive_version": "2.0.0",
@@ -21,14 +21,10 @@
       "retrieved": "2026-10-14",
       "selection": {
         "bounds": [
-          -17,
-          15,
-          55,
-          63
-        ],
-        "excluded_classes": [
-          "Canal",
-          "Reservoir"
+          -27,
+          8,
+          65,
+          67
         ],
         "raster_zoom": [
           0,
@@ -43,11 +39,11 @@
     },
     {
       "accounting": {
-        "empty": 0,
-        "excluded_class": 0,
         "input": 11,
-        "output": 9,
-        "outside": 2
+        "excluded_class": 0,
+        "outside": 2,
+        "empty": 0,
+        "output": 9
       },
       "advertised_version": "5.1.1",
       "archive_version": "5.1.1",
@@ -61,18 +57,10 @@
       "retrieved": "2026-10-14",
       "selection": {
         "bounds": [
-          -17,
-          15,
-          55,
-          63
-        ],
-        "excluded_classes": [
-          "Canal",
-          "Reservoir"
-        ],
-        "raster_zoom": [
-          0,
-          6
+          -27,
+          8,
+          65,
+          67
         ]
       },
       "sha256": "e547d749445eaa0964aba76738090ec88f5e63c4585122170f98c67a7ea922dc",
@@ -83,11 +71,11 @@
     },
     {
       "accounting": {
-        "empty": 0,
-        "excluded_class": 2,
         "input": 1473,
-        "output": 232,
-        "outside": 1239
+        "excluded_class": 2,
+        "outside": 1153,
+        "empty": 0,
+        "output": 318
       },
       "advertised_version": "5.0.0",
       "archive_version": "5.0.0",
@@ -101,18 +89,14 @@
       "retrieved": "2026-10-14",
       "selection": {
         "bounds": [
-          -17,
-          15,
-          55,
-          63
+          -27,
+          8,
+          65,
+          67
         ],
         "excluded_classes": [
           "Canal",
           "Reservoir"
-        ],
-        "raster_zoom": [
-          0,
-          6
         ]
       },
       "sha256": "ded71b01870855ccfe19b51f2ec14c9bb48fae23c0e9f3c11974d426433b5c38",
@@ -123,11 +107,11 @@
     },
     {
       "accounting": {
-        "empty": 0,
-        "excluded_class": 230,
         "input": 1355,
-        "output": 156,
-        "outside": 969
+        "excluded_class": 45,
+        "outside": 1080,
+        "empty": 0,
+        "output": 230
       },
       "advertised_version": "5.0.0",
       "archive_version": "5.0.0",
@@ -141,18 +125,14 @@
       "retrieved": "2026-10-14",
       "selection": {
         "bounds": [
-          -17,
-          15,
-          55,
-          63
+          -27,
+          8,
+          65,
+          67
         ],
         "excluded_classes": [
           "Canal",
           "Reservoir"
-        ],
-        "raster_zoom": [
-          0,
-          6
         ]
       },
       "sha256": "0803a06f9c3cb4671d89b68c48b142aad9366ba40f665245e12a913fbc61722a",
@@ -163,14 +143,14 @@
     },
     {
       "bytes": 360677,
-      "citation": "Hanson, J. W. (2016), Cities Database, version 1.0; An Urban Geography of the Roman World, 100 BC to AD 300, Archaeopress.",
+      "citation": "Hanson, J. W. (2016). Cities Database, Version 1.0 (OxREP databases), doi:10.5287/bodleian:eqapevAn8; Hanson, J. W. (2016), An Urban Geography of the Roman World, 100 B.C. to A.D. 300 (Oxford: Archaeopress).",
       "id": "hanson-cities",
       "landing_url": "https://oxrep.web.ox.ac.uk/cities-database",
       "path": "data/raw/hanson-cities/hanson2016_citiesdatabase_oxrep.xlsx",
       "publisher": "Oxford Roman Economy Project",
       "sha256": "5b9fc0195c3b5f2df71d6380174974215280cafd3bf5fa463fbf96969b549b6c",
-      "terms": "Publisher requests citation of database and monograph; no standard redistribution license verified",
-      "terms_url": "https://oxrep.web.ox.ac.uk/cities-database",
+      "terms": "OxREP / Oxford University Research Archive (ORA) terms: non-commercial academic and teaching use; cite both the database (DOI) and monograph. No standalone raw dataset download or redistribution is provided.",
+      "terms_url": "https://ora.ox.ac.uk/terms_of_use",
       "url": "https://oxrep.web.ox.ac.uk/sites/default/files/oxrep/documents/media/hanson2016_citiesdatabase_oxrep.xlsx",
       "version": "1.0 (2016)",
       "label": "Oxford Hanson Cities"

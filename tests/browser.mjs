@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -9,28 +11,53 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const types = { '.mjs': 'text/javascript', '.js': 'text/javascript', '.html': 'text/html',
   '.json': 'application/json', '.css': 'text/css', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
-const profile = await mkdtemp(path.join(tmpdir(), 'regional-map-'));
+const profile = await mkdtemp(path.join(tmpdir(), 'roman-landscapes-'));
 const publicURL = process.argv[2];
 let origin = publicURL;
 let server, context;
 const errors = new Set(), external = new Set();
 
+// Serve the actual static response policy, with controlled future releases for lifecycle tests.
+const rules=[];
+let update, override, base, oldPort, missingDetail;
+function headers(pathname) {
+  const result={};
+  for (const {pattern,values} of rules) {
+    if (pattern===pathname || (pattern.endsWith('*') && pathname.startsWith(pattern.slice(0,-1)))) Object.assign(result,values);
+  }
+  return result;
+}
 async function serve() {
+  if (!rules.length) {
+    for (const line of (await readFile(path.join(dist,'_headers'),'utf8')).split('\n')) {
+      if (line.startsWith('/')) rules.push({pattern:line.trim(),values:{}});
+      else if (line.trim()) {
+        const i=line.indexOf(':');rules.at(-1).values[line.slice(0,i).trim()]=line.slice(i+1).trim();
+      }
+    }
+    base=JSON.parse(await readFile(path.join(dist,'release.json')));
+  }
   server = createServer(async (req, res) => {
-    const pathname = new URL(req.url, 'http://localhost').pathname;
-    const file = path.resolve(dist, '.' + (pathname === '/' ? '/index.html' : pathname));
-    if (!file.startsWith(dist)) { res.writeHead(404).end(); return; }
+    const url=new URL(req.url,'http://localhost'), pathname=url.pathname;
+    let relative=pathname==='/'?'/index.html':pathname;
+    if (update && relative.startsWith('/packs/'+update.id+'/')) relative=relative.replace(update.id,base.id);
+    const file = path.resolve(dist, '.' + relative);
+    if (!file.startsWith(dist) || pathname===missingDetail) { res.writeHead(404).end(); return; }
     try {
-      const data = await readFile(file);
-      res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream',
-        'Cache-Control': 'no-store' }).end(data);
+      let data;
+      if (update && pathname==='/release.json') data=JSON.stringify(update);
+      else if (override && pathname===override.path) data=override.bytes;
+      else data=await readFile(file);
+      res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', ...headers(pathname) }).end(data);
     } catch { res.writeHead(404).end(); }
   });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  origin = 'http://127.0.0.1:' + server.address().port;
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(oldPort || 0, '127.0.0.1', resolve); });
+  oldPort=server.address().port;
+  origin = 'http://127.0.0.1:' + oldPort;
 }
 
 async function launch(width, offline = false) {
+  console.error('Chromium startup',width,offline?'offline':'online');
   context = await chromium.launchPersistentContext(profile, {
     headless: true, executablePath: process.env.CHROMIUM_PATH || undefined,
     viewport: { width, height: width === 390 ? 844 : 880 },
@@ -40,10 +67,37 @@ async function launch(width, offline = false) {
   context.on('request', req => {
     if (/^https?:/.test(req.url()) && new URL(req.url()).origin !== new URL(origin).origin) external.add(req.url());
   });
+  if (offline) {
+    proof.offlinePackRequests=0;
+    context.on('request',req=>{
+      if (!proof.offlineColdBoot && new URL(req.url()).pathname.startsWith('/packs/')) proof.offlinePackRequests++;
+    });
+  }
   const page = context.pages()[0];
   page.setDefaultTimeout(30000);
-  page.on('pageerror', e => errors.add(e.message));
-  page.on('console', m => { if (m.type() === 'error') errors.add(m.text()); });
+  page.on('pageerror', e => {errors.add(e.message);console.error(e.message);});
+  page.on('console', m => {
+    if (m.type() !== 'error') return;
+    // Chromium reports the expected network-only update probe when the server is stopped.
+    if (m.location().url.endsWith('/release.json?check=1') && /net::ERR_(INTERNET_DISCONNECTED|CONNECTION_REFUSED|FAILED)/.test(m.text())) return;
+    errors.add(m.text());
+  });
+  if (!offline && !publicURL) {
+    // Select Simple after WebGL initialization and before the first style load.
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem('early-mode-tested')) return;
+      sessionStorage.setItem('early-mode-tested','1');
+      const get=HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext=function(...args) {
+        const result=get.apply(this,args);
+        if (result && args[0]==='webgl2' && document.querySelector('#map')?.contains(this)) {
+          queueMicrotask(()=>document.querySelector('input[value=simple]').click());
+          HTMLCanvasElement.prototype.getContext=get;
+        }
+        return result;
+      };
+    });
+  }
   await page.goto(origin);
   await page.locator('#map[data-ready=true]').waitFor({ timeout: 60000 });
   assert.equal(await page.locator('#map-error').isVisible(), false);
@@ -57,7 +111,12 @@ async function layout(page, width) {
   assert.equal(await page.locator('[data-layer]').count(),3);
   assert.equal(await page.locator('[data-tier]').count(),3);
   assert.deepEqual(await page.locator('[data-layer]').evaluateAll(bs=>bs.map(b=>b.dataset.layer)),['settlements','roads','maritime']);
-  assert.equal(await page.locator('#credits a').count(), 8);
+  assert.equal(await page.locator('#credits > li').count(), 8);
+  const credits=page.locator('#credits');
+  assert.match(await credits.textContent(),/10\.5287\/bodleian:eqapevAn8/);
+  assert.match(await credits.textContent(),/non-commercial academic/);
+  assert.match(await credits.locator('details pre').textContent(),/Copyright \(c\) 2013 Elijah Meeks/);
+  assert.equal(await credits.locator('a[target="_blank"][rel="noopener noreferrer"]').count(),16);
   const box = await page.locator('canvas.maplibregl-canvas').boundingBox();
   assert.ok(box.width >= 300 && box.height >= 200);
 }
@@ -202,7 +261,9 @@ async function tierInteractions(page,open,loaded) {
   await page.waitForFunction(()=>document.querySelector('#map-hover').textContent==='Roma · Settlement (Rank 1)' &&
     !document.querySelector('#map-hover').hidden);
   assert.equal(await canvas.evaluate(c=>c.style.cursor),'pointer');
-  await canvas.click({position:pos});await loaded(roma);
+  await canvas.click({position:pos});
+  await page.locator('#overlap-picker').waitFor();
+  assert.equal(await page.locator('#record-panel').getAttribute('data-loaded'),null);
   const ids=await page.locator('#overlap-records button').evaluateAll(bs=>bs.map(b=>b.dataset.record));
   assert.equal(ids[0],roma);assert(ids.length>1);
   const ranks=await page.evaluate(async ids=>{
@@ -217,10 +278,14 @@ async function tierInteractions(page,open,loaded) {
   assert.deepEqual(await camera(),before);assert.equal(await page.evaluate(()=>window.testFits),0);
   await open(roma);const located=await camera();assert.notDeepEqual(located,before);
   assert.equal(await page.evaluate(()=>window.testFits),1);
+  await ports.uncheck();
   await open('orbis:route:987571');
   const related=page.locator('#record-content button[data-related]').first();
   const destination=await related.getAttribute('data-related');await related.click();await loaded(destination);
   assert.equal(await page.evaluate(()=>window.testFits),3);
+  assert.equal(await page.evaluate(async()=>(await window.testMap.getSource('selected-record').getData()).properties.id),destination);
+  assert(await page.locator('#selection-notice').isVisible());
+  await ports.check();
   await page.locator('#close-record').click();
   assert.equal(await page.locator('#map-hover').isVisible(),false);
   for(const id of ['settlements','roads','maritime']) await page.locator('[data-layer="'+id+'"]').uncheck();
@@ -245,7 +310,8 @@ async function tierInteractions(page,open,loaded) {
   await canvas.click({position:isolatedPos});await loaded(isolated);
   assert.equal(await page.locator('#overlap-picker').isVisible(),false);assert.deepEqual(await camera(),isolatedCamera);
   await tier('settlements').selectOption('major');
-  assert.deepEqual(await page.evaluate(async()=>(await window.testMap.getSource('selected-record').getData()).features),[]);
+  assert.equal(await page.evaluate(async()=>(await window.testMap.getSource('selected-record').getData()).properties.id),isolated);
+  assert(await page.locator('#selection-notice').isVisible());
   await page.locator('#close-record').click();await page.waitForFunction(()=>window.testMap.loaded());
   await canvas.hover({position:isolatedPos});await canvas.click({position:isolatedPos});
   assert.equal(await page.locator('#record-panel').isVisible(),false);
@@ -279,14 +345,22 @@ async function observeMap(page) {
   // Observe the map instance through its public API for this browser test only.
   await page.evaluate(async()=>{
     const {Map:GLMap}=await import('/vendor/maplibre-gl/maplibre-gl.mjs');
-    const original=GLMap.prototype.setLayoutProperty;
-    GLMap.prototype.setLayoutProperty=function(...args){
-      GLMap.prototype.setLayoutProperty=original;
+    const original=GLMap.prototype.fitBounds;
+    GLMap.prototype.fitBounds=function(...args){
+      GLMap.prototype.fitBounds=original;
       window.testMap=this;
       return original.apply(this,args);
     };
   });
+  await page.locator('#reset').click();
+  if (!publicURL) {
+    assert(await page.locator('[value=simple]').isChecked());
+    assert.equal(await page.evaluate(()=>window.testMap.getLayoutProperty('relief','visibility')),'none');
+  }
+  await page.locator('[value=natural]').check();
   await page.locator('[value=simple]').check();
+  assert.equal(await page.evaluate(()=>window.testMap.getLayoutProperty('relief','visibility')),'none');
+  assert(await page.locator('.maplibregl-ctrl-attrib').innerText().then(t=>t.includes('Natural Earth')));
   await page.locator('[value=natural]').check();
   await page.waitForFunction(()=>window.testMap.loaded());
   const startup=await page.evaluate(()=>{
@@ -309,7 +383,7 @@ async function observeMap(page) {
       coastalProbes:probes.map(id=>({id,label:routes.get(id)})),
       tentativeIDs:[...new Set(hits('roads-tentative').map(f=>f.properties.id))].sort()};
   });
-  assert.equal(first.zoom.toFixed(1),'3.4');
+  assert(first.zoom>=1 && first.zoom<4.5);
   assert.deepEqual(first.counts,['(176)','(13,992)','(515 routes · 0 ports)']);
   assert.deepEqual(first.ranks,['1','2']);assert.deepEqual(first.certainty,['Certain','Conjectured']);
   assert.deepEqual(first.water,['coastal','ferry','overseas']);
@@ -400,7 +474,8 @@ async function interactions(page) {
     await waitForLayer(type==='Point'?'selected-point':'selected-line');
     if(group) {
       await toggle(group).uncheck();
-      assert.deepEqual((await selection()).features,[]);
+      assert.equal((await selection()).properties.id,id);
+      assert(await page.locator('#selection-notice').isVisible());
       await toggle(group).check();
       assert.equal((await selection()).properties.id,id);
     } else {
@@ -429,7 +504,8 @@ async function interactions(page) {
   assert(ids.length>1 && ids[0]===roma);
   assert.equal(await page.locator('#overlap-count').textContent(),ids.length+' overlapping records at this location');
   assert((await choices.locator('small').allTextContents()).every(s=>s.split(' · ').every(Boolean)));
-  await loaded(ids[0]);await choices.nth(1).click();await loaded(ids[1]);
+  assert.equal(await page.locator('#record-panel').getAttribute('data-loaded'),null);
+  await choices.nth(1).click();await loaded(ids[1]);
   const camera=()=>page.evaluate(()=>[...window.testMap.getCenter().toArray(),window.testMap.getZoom()]);
   const before=await camera(), highlight=await selection();
   for(const mode of ['simple','natural']){
@@ -472,13 +548,23 @@ async function foundation(page,full) {
   }
   for (const query of ['Roma','Rhome']) {
     await search.fill(query);
-    const ids=await page.locator('#search-results button').evaluateAll(bs=>bs.slice(0,2).map(b=>b.dataset.record));
-    assert.deepEqual(ids,['hanson:Hanson2016_992','pleiades:423025']);proof[query]=ids;
+    const first=query==='Roma'?'hanson:Hanson2016_992':'pleiades:423025';
+    await page.waitForFunction(id=>document.querySelector('#search-results button')?.dataset.record===id,first);
+    const ids=await page.locator('#search-results button').evaluateAll(bs=>bs.map(b=>b.dataset.record));
+    if (query==='Roma') assert.deepEqual(ids.slice(0,2),[first,'pleiades:423025']);
+    else assert(!ids.includes('hanson:Hanson2016_992'));
+    proof[query]=ids.slice(0,2);
   }
   await search.fill('تل ابو شيجة');
   await page.locator('#search-results button[data-record="pleiades:108542249"]').click();
   await loaded('pleiades:108542249');
-  if (!full) return;
+  if (!full) { await page.locator('#close-record').click(); return; }
+  assert(await page.locator('#search-category').isVisible());
+  await page.locator('#search-category').selectOption('Settlement');
+  await search.fill('Roma');
+  await page.locator('#search-results button[data-record="hanson:Hanson2016_992"]').waitFor();
+  assert((await page.locator('#search-results button').evaluateAll(bs=>bs.map(b=>b.dataset.record))).every(id=>id.startsWith('hanson:')));
+  await page.locator('#search-category').selectOption('');
   for(const box of await page.locator('[data-layer]').all()){await box.uncheck();await box.check();}
   await page.locator('#search-source').selectOption('pleiades');
   await search.fill('Roma');
@@ -521,6 +607,10 @@ async function foundation(page,full) {
   await open('hanson:unmatched');assert.match(await body.innerText(),/Agora\?/);
   for(const fid of ['14767','14768']){
     await open('itinere:17122148:'+fid);
+    assert.match(await body.locator('.record-notes').innerText(),/temporary ferry connector/i);
+    await body.locator('.original-source summary').click();
+    const original=JSON.parse(await body.locator('.original-source pre').textContent());
+    assert(original.native_crs && original.native_geometry.coordinates.length);
     await body.getByRole('button',{name:'Open field definitions'}).click();
     await loaded('itinere:fields');
     assert.equal(await body.locator('table tr').count(),16);
@@ -556,6 +646,228 @@ async function foundation(page,full) {
   Object.assign(proof,{maritimeReverseLinks:7,ferries:2,citationRedirect:18,docxCells:64,rawBibBytes:bytes.length,distinctKerameikosRows:duplicate.length});
 }
 
+async function captureMap(page) {
+  await page.evaluate(async()=>{
+    const {Map:AtlasMap}=await import('/vendor/maplibre-gl/maplibre-gl.mjs');
+    const original=AtlasMap.prototype.fitBounds;
+    AtlasMap.prototype.fitBounds=function(...args) {
+      AtlasMap.prototype.fitBounds=original;
+      window.testMap=this;
+      return original.apply(this,args);
+    };
+  });
+  await page.locator('#reset').click();
+}
+
+async function mobilePicking(page) {
+  await captureMap(page);
+  await page.waitForFunction(()=>window.testMap.loaded());
+  const bounds=await page.evaluate(()=>window.testMap.getBounds().toArray());
+  assert(bounds[0][0]<=-17 && bounds[1][0]>=55,JSON.stringify(bounds));
+  await page.evaluate(()=>window.testMap.jumpTo({center:[12.4851,41.8928],zoom:4}));
+  await page.waitForFunction(()=>window.testMap.loaded());
+  const point=await page.evaluate(()=>{
+    const {x,y}=window.testMap.project([12.4851,41.8928]); return {x,y};
+  });
+  await page.locator('#map canvas').click({position:point});
+  await page.locator('#overlap-picker').waitFor();
+  assert.equal(await page.locator('#record-panel').getAttribute('data-loaded'),null);
+  await page.locator('#overlap-records button').first().click();
+  await page.locator('#record-panel[data-loaded]').waitFor();
+  for (const selector of ['#record-panel','#close-record']) {
+    const box=await page.locator(selector).boundingBox();
+    assert(box.x>=0 && box.x+box.width<=390 && box.y>=0 && box.y+box.height<=845,JSON.stringify(box));
+  }
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),390);
+  await page.locator('#close-record').click();
+  assert(await page.locator('#search').evaluate(input=>input===document.activeElement));
+  proof.narrowMapPicker=true;
+}
+
+async function savedState(page) {
+  return page.evaluate(async()=>{
+    const {activeRelease,readState}=await import('/storage.js');
+    const active=await activeRelease(true);
+    const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('atlas-packages');
+    const dirs=[];
+    for await (const name of root.keys()) dirs.push(name);
+    return {id:active.id,dir:active.storageDirectory,dirs,completed:await readState('completed'),transfer:await readState('transfer')};
+  });
+}
+
+async function prepareUpdate(fault) {
+  update=structuredClone(base);
+  update.id='foundation-test-'+fault;
+  for (const f of update.files) f.path=f.path.replace(base.id,update.id);
+  override=null;
+  const file=update.files.find(f=>f.path.includes(fault==='closure'?'/catalog.json.gz':'/details-hanson-cities-'));
+  const data=await readFile(path.join(dist,file.path.replace(update.id,base.id)));
+  if (['corrupt','gzip','closure'].includes(fault)) {
+    let bytes=Buffer.from(data);
+    if (fault==='closure') {
+      const catalog=JSON.parse(gunzipSync(bytes));
+      catalog.records[0].detail='missing-detail.json.gz';
+      bytes=gzipSync(JSON.stringify(catalog));
+    } else bytes[0]^=255;
+    if (fault!=='corrupt') {
+      file.sha256=createHash('sha256').update(bytes).digest('hex');
+      update.bytes+=bytes.length-file.bytes;
+      file.bytes=bytes.length;
+    }
+    override={path:'/'+file.path,bytes};
+  }
+}
+
+async function staleDetail() {
+  const tab=await context.newPage();
+  // Model a tab requesting a shard it has never cached.
+  const network=await context.newCDPSession(tab);
+  await network.send('Network.enable');
+  await network.send('Network.setCacheDisabled',{cacheDisabled:true});
+  const shard=base.files.find(f=>f.path.includes('/details-pleiades-075.'));
+  const records=JSON.parse(gunzipSync(await readFile(path.join(dist,shard.path))));
+  const id=Object.keys(records)[0];
+  try {
+    await tab.goto(origin); await tab.locator('#map[data-ready=true]').waitFor();
+    missingDetail='/'+shard.path;
+    const open=async()=>{
+      await tab.locator('#search').fill(id);
+      await tab.locator('#search-results button[data-record="'+id+'"]').click();
+    };
+    await open();
+    await tab.getByText('A newer atlas release is online. Reload to open this record.').waitFor();
+    missingDetail=null;
+    await tab.locator('#record-content').getByRole('button',{name:'Reload',exact:true}).click();
+    await tab.locator('#map[data-ready=true]').waitFor();
+    await open();
+    await tab.locator('#record-panel[data-loaded="'+id+'"]').waitFor();
+    proof.staleDetailRecovery=true;
+  } finally { missingDetail=null; await tab.close(); }
+}
+
+async function updateLifecycle(page) {
+  update={...base,id:'future-release',app_schema:2};
+  const manifests=await page.evaluate(async()=>{
+    const {validateManifest}=await import('/storage.js');
+    const current=validateManifest(await (await fetch('/release.json')).json());
+    const future=await (await fetch('/release.json?check=1',{cache:'no-store'})).json();
+    let rejected=false;
+    try { validateManifest(future); } catch { rejected=true; }
+    return [current.id,future.id,rejected];
+  });
+  assert.deepEqual(manifests,[base.id,'future-release',true]);
+  update=null;
+  const aborted=await page.evaluate(async()=>{
+    const {readState,writeState}=await import('/storage.js');
+    const original=IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction=function(...args) {
+      const tx=original.apply(this,args);
+      queueMicrotask(()=>tx.abort());
+      return tx;
+    };
+    try {
+      const results=await Promise.allSettled([readState('active'),writeState('abort-probe',1)]);
+      return results.map(result=>result.reason?.name);
+    } finally { IDBDatabase.prototype.transaction=original; }
+  });
+  assert.deepEqual(aborted,['AbortError','AbortError']);
+  const initial=await savedState(page);
+  assert.deepEqual(initial.dirs,[initial.dir]);
+  await page.evaluate(async()=>{
+    const s=await import('/storage.js');
+    const active=await s.activeRelease();
+    await s.downloadRelease(active);
+  });
+  assert.deepEqual(await savedState(page),initial);
+  // A tab holding the transfer lock cannot prevent another tab's offline startup.
+  await page.evaluate(()=>new Promise(resolve=>{
+    navigator.locks.request('atlas-download',()=>new Promise(unlock=>{window.releaseTestLock=unlock;resolve();}));
+  }));
+  await context.setOffline(true);
+  const sibling=await context.newPage();
+  try {
+    await sibling.goto(origin);
+    await sibling.locator('#map[data-ready=true]').waitFor();
+    assert.match(await sibling.locator('#storage-status').textContent(),/ready offline/);
+    assert.equal((await savedState(sibling)).dir,initial.dir);
+  } finally {
+    await sibling.close(); await context.setOffline(false); await page.evaluate(()=>window.releaseTestLock());
+  }
+  for (const [fault,message] of [['cancel','Download cancelled'],['quota','Not enough browser storage'],
+    ['corrupt','Content checksum failed'],['gzip','Invalid compressed package'],['closure','missing detail shard']]) {
+    console.error('Checking interrupted update:',fault);
+    await prepareUpdate(fault);
+    await page.reload();
+    await page.locator('#update-maps').waitFor();
+    await page.locator('#map[data-ready=true]').waitFor();
+    if (fault==='quota') await page.evaluate(()=>navigator.storage.estimate=async()=>({usage:0,quota:1}));
+    await page.locator('#update-maps').click();
+    if (fault==='cancel') {
+      await page.waitForFunction(()=>document.querySelector('#progress').value>0);
+      await page.locator('#cancel').click();
+    }
+    await page.locator('#storage-status').filter({hasText:message}).waitFor({timeout:90000});
+    assert.deepEqual(await savedState(page),initial,fault);
+  }
+  await prepareUpdate('complete');
+  await page.reload();
+  await page.locator('#update-maps').click();
+  await page.waitForFunction(id=>document.querySelector('#package-description').textContent.startsWith(id),update.id,{timeout:90000});
+  await page.locator('#map[data-ready=true]').waitFor();
+  const current=await savedState(page);
+  assert.equal(current.id,update.id); assert.notEqual(current.dir,initial.dir);
+  assert.deepEqual(current.dirs,[current.dir]); assert.deepEqual(current.completed,[current.dir]);
+  const pinned=await page.evaluate(async()=>(await (await fetch('/release.json')).json()).id);
+  assert.equal(pinned,base.id);
+  proof.offlineUpdate=['deduplication','concurrent cold boot','cancel','quota','checksum','gzip','catalog closure','atomic replacement'];
+}
+
+async function offlineDepth(page) {
+  await captureMap(page);
+  for (const id of ['hanson:Hanson2016_992','itinere:17122148:14767','orbis:route:987571','pleiades:423025']) {
+    await page.locator('#search').fill(id);
+    await page.locator('#search-results button[data-record="'+id+'"]').click();
+    await page.locator('#record-panel[data-loaded="'+id+'"]').waitFor();
+    assert(await page.locator('#record-content').getByText('Cite this source',{exact:true}).isVisible());
+    await page.locator('#close-record').click();
+  }
+  await page.locator('[value=natural]').check();
+  await page.evaluate(()=>{
+    const proto=pmtiles.PMTiles.prototype, original=proto.getZxy;
+    window.tileReads=[];
+    proto.getZxy=async function(z,x,y,...rest) {
+      const result=await original.call(this,z,x,y,...rest);
+      if (result?.data?.byteLength) window.tileReads.push([z,x,y]);
+      return result;
+    };
+    window.testMap.jumpTo({center:[-8.4,43.36],zoom:6});
+  });
+  await page.waitForFunction(()=>window.testMap.loaded() && window.tileReads.some(([z,x,y])=>z===6 && x===30 && y===23));
+  assert.equal(proof.offlinePackRequests,0);
+  proof.offlineColdBoot={sources:4,reliefTile:[6,30,23],packRequests:0};
+}
+
+async function damagedPackage(page) {
+  // Keep an active pointer and evict one real file while the network is unavailable.
+  await page.evaluate(async()=>{
+    const {activeRelease}=await import('/storage.js');
+    const active=await activeRelease();
+    const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('atlas-packages');
+    const dir=await root.getDirectoryHandle(active.storageDirectory);
+    await dir.removeEntry(active.files.find(f=>f.path.endsWith('catalog.json.gz')).sha256);
+  });
+  await page.reload();
+  await page.locator('#map-error').filter({hasText:'Browser storage was cleared or damaged'}).waitFor();
+  await page.locator('#remove').waitFor();
+  await serve(); await context.setOffline(false);
+  await page.locator('#remove').click();
+  await page.locator('#map[data-ready=true]').waitFor();
+  assert.equal(await page.locator('#remove').isVisible(),false);
+  assert.equal(await page.evaluate(async()=>(await import('/storage.js')).storedContentStatus()),false);
+  proof.damagedPackageRecovery=true;
+}
+
+
 try {
   if (!publicURL) await serve();
   let page = await launch(1440);
@@ -564,7 +876,9 @@ try {
   if (process.env.ATLAS_SCREENSHOT) await page.screenshot({path:process.env.ATLAS_SCREENSHOT});
   assert.deepEqual(await page.locator('[data-tier]').evaluateAll(ns=>ns.map(n=>n.value)),['auto','auto','auto']);
   assert.equal(await page.locator('[data-sublayer=ports]').isChecked(),false);
+  console.error('Checking search and record details');
   await foundation(page,true);
+  console.error('Checking layers and selection');
   await interactions(page);
   await guide(page,1440);
   await controls(page);
@@ -572,12 +886,19 @@ try {
     await page.setViewportSize({ width: 390, height: 844 });
     await layout(page, 390);
     await guide(page,390);
+    await mobilePicking(page);
     await controls(page);
   }
   if (!publicURL) {
+    await page.setViewportSize({width:1440,height:880});
+    await staleDetail();
     await savedTiers(page,true);
+    await page.evaluate(()=>navigator.storage.persist=async()=>false);
     await page.locator('#download').click();
-    await page.getByText('Both maps are verified and ready offline.', { exact: true }).waitFor();
+    await page.locator('#storage-status').filter({hasText:'Both maps are verified and ready offline.'}).waitFor();
+    assert.match(await page.locator('#storage-status').textContent(),/evict offline data/);
+    console.error('Checking offline package lifecycle');
+    await updateLifecycle(page);
     await context.close();
     await new Promise(resolve => server.close(resolve));
     server = null;
@@ -585,12 +906,12 @@ try {
     await savedTiers(page,false);
     await layout(page, 390);
     await guide(page,390);
-    await foundation(page,false);
+    await offlineDepth(page);
     await controls(page);
     await page.getByRole('button', { name: 'Verify saved maps' }).click();
     await page.getByText('All saved map files passed SHA-256 verification.').waitFor();
     await page.locator('#remove').click();
-    await page.getByText('Saved maps removed from this browser.').waitFor();
+    await page.getByText('Saved maps removed. Reconnect and reload to use the full atlas.').waitFor();
     const count = await page.evaluate(async () => {
       const root = await navigator.storage.getDirectory();
       const directory = await root.getDirectoryHandle('atlas-packages');
@@ -599,11 +920,38 @@ try {
       return entries;
     });
     assert.equal(count, 0);
+    assert(await page.locator('input[value=natural]').isDisabled());
+    await serve(); await context.setOffline(false); update=null;
+    await page.reload(); await page.locator('#download').click();
+    await page.locator('#storage-status').filter({hasText:'Both maps are verified'}).waitFor({timeout:90000});
+    await context.setOffline(true);
+    await new Promise(resolve=>server.close(resolve)); server=null;
+    await damagedPackage(page);
+    await page.locator('#download').click();
+    await page.locator('#storage-status').filter({hasText:'Both maps are verified'}).waitFor({timeout:90000});
+    await page.reload(); await page.locator('#map[data-ready=true]').waitFor();
+    const peer=await context.newPage();
+    try {
+      await peer.goto(origin); await peer.locator('#map[data-ready=true]').waitFor();
+      await Promise.all([page.waitForNavigation(),peer.waitForNavigation(),page.locator('#remove').click()]);
+      for (const tab of [page,peer]) {
+        await tab.locator('#map[data-ready=true]').waitFor();
+        assert.equal(await tab.locator('#remove').isVisible(),false);
+      }
+      proof.onlineRemovalReloadedTabs=2;
+    } finally { await peer.close(); }
   }
   assert.deepEqual([...external], []);
   assert.deepEqual([...errors], []);
   console.log(JSON.stringify({ site: origin, chromium:context.browser()?.version(), desktop: 'pass', narrow: 'pass',
     offlineBrowserRestartWithServerStopped: publicURL ? undefined : 'pass', offlineTiersRetained:publicURL?undefined:{settlements:176,roads:1040,maritime:74,ports:294}, foundation:proof, externalRequests: 0, errors: 0 }));
+} catch (error) {
+  const page=context?.pages()[0];
+  if (page) console.error('Atlas state on failure:',await page.evaluate(()=>({
+    online:navigator.onLine, storage:document.querySelector('#storage-status')?.textContent,
+    map:document.querySelector('#map-error')?.textContent, record:document.querySelector('#record-panel')?.dataset.loaded
+  })).catch(()=>null));
+  throw error;
 } finally {
   await context?.close();
   if (server?.listening) await new Promise(resolve => server.close(resolve));

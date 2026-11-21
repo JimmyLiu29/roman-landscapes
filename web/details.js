@@ -8,7 +8,7 @@ export function element(tag,text) {
 function fields(row) {
   const dl=element('dl');
   for (const [k,v] of Object.entries(row)) {
-    if (v!==null && v!==undefined && v!=='') dl.append(element('dt',k),element('dd',v));
+    if (v!==null && v!==undefined && v!=='') dl.append(element('dt',k),element('dd',typeof v==='object'?JSON.stringify(v):v));
   }
   return dl;
 }
@@ -20,7 +20,10 @@ function disclosure(title) {
   const block=element('details'); block.append(element('summary',title)); return block;
 }
 function year(v) {
-  return v==null || v==='NULL' || v==='' ? 'unknown' : Math.abs(Number(v))+(Number(v)<0?' BCE':' CE');
+  if (v==null || v==='NULL' || v==='') return 'unknown';
+  const n=Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return n===0 ? '0 (source value)' : Math.abs(n)+(n<0?' BCE':' CE');
 }
 function roadDates(d) {
   const {Lower_Date:lo,Upper_Date:hi}=d.date_bounds;
@@ -40,10 +43,16 @@ function reference(root,c,select) {
   }
   root.append(p);
 }
-export function renderDetail(record,d,neighbors,select,focusRow) {
+export function renderDetail(record,d,neighbors,select,focusRow,sourcesById) {
   const root=element('section');
   root.className='record-reading';
   root.append(element('h3',record.label.replace(/\s+/g,' ').trim()),element('small',record.kind+' · '+record.id));
+  if (Array.isArray(d.notes) && d.notes.length) {
+    const notes=element('aside');
+    notes.className='record-notes';
+    notes.append(...d.notes.map(note=>element('p',note)));
+    root.append(notes);
+  }
   if (record.kind==='Settlement') {
     const native=d.native;
     root.append(fields({Province:native.Province, Country:native.Country,'Modern name':native['Modern Toponym'],
@@ -86,12 +95,17 @@ export function renderDetail(record,d,neighbors,select,focusRow) {
     filter.oninput=show; show(); root.append(filter,list);
   } else if (d.blocks) {
     for (const block of d.blocks) {
-      if (block.paragraph) root.append(element('p',block.paragraph));
+      if (block.paragraph) {
+        const p=element('p',block.paragraph); p.className='field-paragraph'; root.append(p);
+      }
       else {
         const table=element('table');
         block.rows.forEach((row,i)=>{
           const tr=element('tr');
-          for (const cell of row) tr.append(element(i?'td':'th',cell));
+          for (const cell of row) {
+            const td=element(i?'td':'th',cell.text ?? cell);
+            td.colSpan=cell.span ?? 1; tr.append(td);
+          }
           table.append(tr);
         });
         root.append(table);
@@ -112,17 +126,25 @@ export function renderDetail(record,d,neighbors,select,focusRow) {
     for (const row of d.native) root.append(fields(row));
     root.append(element('p','The incomplete source key does not identify a city.'));
   } else root.append(fields(d.native));
-  for (const {other,role} of neighbors) {
-    const link=button(role+' · '+other.label,()=>select(other.id));
-    link.dataset.related=other.id; root.append(link);
+  for (const {other,role,basis,reverse} of neighbors) {
+    const label=({'source-endpoint':reverse?'Outgoing maritime route':'Origin',
+      'target-endpoint':reverse?'Incoming maritime route':'Destination'})[role] || role;
+    const link=button(label+' · '+other.label,()=>select(other.id));
+    link.dataset.related=other.id; root.append(link,element('small',basis));
   }
   const original=disclosure('Original source fields');
   original.className='original-source';
   original.ontoggle=()=>{
     if (!original.open || original.children.length>1) return;
-    const payload=d.native.BibTeX ?? JSON.stringify({native:d.native,...(d.tables?{tables:d.tables}:{})},null,2);
+    const payload=d.native.BibTeX ?? JSON.stringify({native:d.native,tables:d.tables,native_crs:d.native_crs,native_geometry:d.native_geometry},null,2);
     original.append(element('pre',payload));
   };
   root.append(original);
+  const source=sourcesById?.get(record.source);
+  if (source) {
+    const cite=element('footer');
+    cite.append(element('strong','Cite this source'),element('p',source.citation),element('small',source.terms));
+    root.append(cite);
+  }
   return root;
 }

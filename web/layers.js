@@ -26,7 +26,7 @@ const groups = [
       auto, {id:'all',label:'All settlements'},
       {id:'medium',label:'Major & medium cities · Ranks 1–3',values:['1','2','3']},
       {id:'major',label:'Major centers only · Ranks 1–2',values:['1','2']},
-      {id:'metropoleis',label:'Imperial capitals & metropoleis · Rank 1 only',values:['1']}],
+      {id:'metropoleis',label:'Barrington Atlas Rank 1 only',values:['1']}],
       atZoom:z=>z<4.5?'major':z<5.6?'medium':'all'},
     sources:[{id:'settlements',styles:[town]}],
     legend:[['rank1','Rank 1',['1']],['rank2','Rank 2',['2']],['rank3','Rank 3',['3']],
@@ -45,7 +45,7 @@ const groups = [
         'line-width':scale(3,['case',ferry,0.8,0.55],7,['case',ferry,1.5,1.15]),
         'line-opacity':scale(3,0.5,7,0.85),'line-color':['case',ferry,'#806d63','#b99275'],'line-dasharray':[2,2]}}
     ]}],legend:[['certain','Certain road',['Certain']],['conjectured','Conjectured road',['Conjectured']],
-      ['tentative','Hypothetical road',['Hypothetical']],['tentative','Ferry connector',['Conjectured']]]},
+      ['tentative','Hypothetical road',['Hypothetical']],['ferry','Temporary ferry connector',['Conjectured']]]},
   {id:'maritime',scope:'orbis-maritime',title:'Maritime routes',
     tier:{field:'t',initial:'auto',atZoom:z=>z<5.2?'primary-network':'all',options:[auto,{id:'all',label:'All maritime routes'},
       {id:'primary-network',label:'Primary network · overseas + coastal + ferry',values:['overseas','coastal','ferry']},

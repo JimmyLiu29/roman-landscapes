@@ -1,6 +1,7 @@
 """Source-qualified foundation adapters. No inferred historical identity joins."""
 import csv
 import gzip
+import math
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -167,7 +168,7 @@ def cities(package, record):
 
 def maritime(package, record):
     base = (ROOT / record['path']).parent
-    topology = json.loads((ROOT / record['path']).read_text())
+    topology = json.loads((ROOT / record['path']).read_text(encoding='utf-8'))
     sites = {r['id']: r for r in read_csv(base / 'o_sites.csv')}
     routes = [(native, geometry) for native, geometry in topo_lines(topology)
               if native['properties']['t'] in ['coastal', 'overseas', 'slowover', 'ferry']]
@@ -180,7 +181,7 @@ def maritime(package, record):
         package.add('orbis:place:' + id_, row['label'] if row else 'Unresolved ORBIS node ' + id_, 'orbis-maritime',
                     'Network place' if row else 'Unresolved network place', row or {'id': id_},
                     {'type': 'Point', 'coordinates': [float(row['x']), float(row['y'])]} if row else None,
-                    layer='ports', notes=['ORBIS native network identity; no cross-source identity inferred.'] if row else
+                    layer='ports' if row else None, notes=['ORBIS native network identity; no cross-source identity inferred.'] if row else
                     ['Referenced by route geometry but absent from the retained node table. No name or coordinate has been inferred.'])
     for native, geometry in routes:
         attrs = native['properties']; start, end = endpoint(attrs['sid']), endpoint(attrs['tid'])
@@ -192,8 +193,9 @@ def maritime(package, record):
         package.relation(id_, 'orbis:place:' + start, 'source-endpoint', 'ORBIS sid; upstream six-digit mode-prefix rule')
         package.relation(id_, 'orbis:place:' + end, 'target-endpoint', 'ORBIS tid; upstream six-digit mode-prefix rule')
     types = Counter(r['properties']['t'] for r in topology['objects']['base_routes']['geometries'])
+    assert set(types) <= {'coastal', 'overseas', 'slowover', 'ferry', 'road', 'hires', 'upstream'}, types
     record['accounting'] = {'input_routes': sum(types.values()), 'native_types': dict(types), 'maritime_routes': len(routes),
-        'excluded_other_modes': sum(types[k] for k in ['road', 'hires', 'upstream']), 'input_nodes': len(sites),
+        'excluded_other_modes': sum(types.values()) - len(routes), 'input_nodes': len(sites),
         'referenced_nodes': len(used), 'resolved_nodes': len(used) - len(missing), 'unresolved_node_ids': missing}
     record['endpoint_rule'] = 'orbis.js lines 206–207, retained upstream revision: strip first character only for six-digit sid/tid.'
     record['status'] = 'imported'
@@ -228,18 +230,42 @@ def gazetteer(package, record):
     record['status'] = 'imported'
 
 
+def source_date(value):
+    return None if value is None or str(value).strip().upper() in {'', '0', '0.0', '9999', '9999.0', 'NULL'} else value
+
+
+def roma_distance_km(lines):
+    # Haversine distance from the Hanson Roma coordinate to surveyed vertices.
+    lon, lat = 12.4851, 41.8928
+    best = math.inf
+    for line in lines:
+        for x, y in line:
+            if abs(x-lon) < 0.1 and abs(y-lat) < 0.1:
+                h = (math.sin(math.radians(y-lat)/2)**2 + math.cos(math.radians(lat))
+                     * math.cos(math.radians(y)) * math.sin(math.radians(x-lon)/2)**2)
+                best = min(best, 12742 * math.asin(math.sqrt(h)))
+    return best
+
+
 def roads(package, record):
     from rasterio.warp import transform_geom
-    document = json.loads((ROOT / record['path']).read_text())
+    document = json.loads((ROOT / record['path']).read_text(encoding='utf-8'))
     assert document['crs']['properties']['name'].endswith('3395'), 'Inspect changed source CRS before transforming'
     seen = set(); certainty = Counter(); missing = Counter(); connectors = []
+    nearest_roma = math.inf
     for number, feature in enumerate(document['features']):
         attrs = feature['properties']; native_id = str(attrs['InLine_FID'])
         assert native_id not in seen, 'Inspect non-unique native road IDs'
         seen.add(native_id)
         geometry = transform_geom('EPSG:3395', 'EPSG:4326', feature['geometry'])
         # Display uses horizontal coordinates; the source XYZ geometry is retained below.
-        geometry = {'type': geometry['type'], 'coordinates': [[[p[0], p[1]] for p in line] for line in geometry['coordinates']]}
+        kind = geometry['type']
+        assert kind in ('LineString', 'MultiLineString'), kind
+        lines = [geometry['coordinates']] if kind == 'LineString' else geometry['coordinates']
+        lines = [[p[:2] for p in line] for line in lines]
+        if attrs['Segment_s'] == 'Certain':
+            nearest_roma = min(nearest_roma, roma_distance_km(lines))
+        geometry = {'type': kind, 'coordinates': lines[0] if kind == 'LineString' else lines}
         connector = attrs.get('Descriptio') == 'temporary' and 'ferry' in (attrs.get('Name') or '').lower()
         if connector: connectors.append(native_id)
         _, detail = package.add('itinere:17122148:' + native_id, attrs.get('Name') or 'Unnamed road ' + native_id,
@@ -250,15 +276,16 @@ def roads(package, record):
         display = package.layers['roads'][-1]
         detail['geometry'] = display['geometry']
         detail['native_geometry'] = feature['geometry']; detail['native_crs'] = document['crs']
-        detail['date_bounds'] = {key: None if attrs[key] in [0, 9999, None] else attrs[key] for key in ['Lower_Date', 'Upper_Date']}
-        detail['date_margins'] = {key: None if attrs[key] in (0,9999,None) else attrs[key] for key in ('Low_Date_E','Up_Date_E')}
-        detail['notes'].append('Date values 0 and 9999 mean missing data; they are not historical years. Display geometry is simplified; the full native XYZ geometry is included in the record export.')
+        detail['date_bounds'] = {key: source_date(attrs[key]) for key in ['Lower_Date', 'Upper_Date']}
+        detail['date_margins'] = {key: source_date(attrs[key]) for key in ('Low_Date_E','Up_Date_E')}
+        detail['notes'].append('The field definitions mark zero dates and error margins as uncertain. This snapshot also uses 9999 for missing values. The full native XYZ geometry is preserved under Original source fields.')
         if connector: detail['notes'].append('This temporary ferry connector is explicitly supplied by the road-network source; it is not an independently evidenced road.')
         detail['source_feature_index'] = number
         certainty[str(attrs.get('Segment_s'))] += 1
         for key in ['Bibliograp', 'Citation']:
             if not attrs.get(key): missing[key] += 1
-    record['accounting'] = {'input': len(document['features']), 'output': len(seen), 'certainty': dict(certainty),
+    assert nearest_roma < 2, f'Certain road vertex is {nearest_roma:.3f} km from Roma'
+    record['accounting'] = {'roma_vertex_km': nearest_roma, 'input': len(document['features']), 'output': len(seen), 'certainty': dict(certainty),
                             'missing_fields': dict(missing), 'source_temporary_ferry_ids': connectors}
     record['display_simplification_degrees'] = 0.001
     record['status'] = 'imported'

@@ -1,6 +1,7 @@
 """Bounded acquisition, deterministic physical-map build and local static serving."""
 from pathlib import Path
 import hashlib
+from collections import Counter, defaultdict
 import io
 import json
 import math
@@ -12,13 +13,14 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
-from foundation import SOURCES, build_foundation
+from foundation import BOUNDS, SOURCES, build_foundation, roma_distance_km
 
 RAW = ROOT / 'data/raw'
 WEB = ROOT / 'web'
 DIST = ROOT / 'dist'
 MANIFEST = ROOT / 'data/source-manifest.json'
-BOUNDS = [-17, 15, 55, 63]
+VIEW_BOUNDS = [-27, 8, 65, 67]
+
 def digest(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -26,13 +28,13 @@ def digest(path):
 
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(',', ':')) + '\n')
+    path.write_text(json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(',', ':')) + '\n', encoding='utf-8')
 
 
 def physical_vectors(out, manifest):
     import shapefile
     from shapely.geometry import shape, mapping, box
-    clip = box(*BOUNDS)
+    clip = box(*VIEW_BOUNDS)
     land_shapes = []
     for name in ['land', 'rivers', 'lakes']:
         record = next(r for r in manifest['sources'] if r['id'] == 'natural-earth-' + name)
@@ -47,15 +49,15 @@ def physical_vectors(out, manifest):
                 counts['input'] += 1
                 attrs = row.record.as_dict()
                 kind = attrs.get('featurecla')
-                if kind in ['Canal', 'Reservoir']:
-                    counts['excluded_class'] += 1
-                    continue
                 if not row.shape.points:
                     counts['empty'] += 1
                     continue
                 geom = shape(row.shape.__geo_interface__)
                 if not geom.intersects(clip):
                     counts['outside'] += 1
+                    continue
+                if kind in ['Canal', 'Reservoir']:
+                    counts['excluded_class'] += 1
                     continue
                 if not geom.is_valid:
                     from shapely import make_valid
@@ -76,7 +78,11 @@ def physical_vectors(out, manifest):
             record['accounting'] = counts
             record['display_simplification_degrees'] = 0.006
     from shapely.ops import unary_union
-    ocean = clip.difference(unary_union(land_shapes))
+    land = unary_union(land_shapes)
+    coast = land.boundary.difference(clip.exterior.buffer(1e-6))
+    write_json(out / 'coast.geojson', {'type': 'FeatureCollection', 'features': [
+        {'type': 'Feature', 'properties': {}, 'geometry': mapping(coast)}]})
+    ocean = clip.difference(land)
     write_json(out / 'ocean.geojson', {'type': 'FeatureCollection', 'features': [
         {'type': 'Feature', 'properties': {}, 'geometry': mapping(ocean)}]})
 
@@ -85,8 +91,8 @@ def tile_range(z):
     n = 2 ** z
     def y(lat):
         return int((1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n)
-    return (range(int((BOUNDS[0] + 180) / 360 * n), int((BOUNDS[2] + 180) / 360 * n) + 1),
-            range(y(BOUNDS[3]), y(BOUNDS[1]) + 1))
+    return (range(int((VIEW_BOUNDS[0] + 180) / 360 * n), int((VIEW_BOUNDS[2] + 180) / 360 * n) + 1),
+            range(y(VIEW_BOUNDS[3]), y(VIEW_BOUNDS[1]) + 1))
 
 
 def relief_tiles(out, manifest):
@@ -121,7 +127,8 @@ def relief_tiles(out, manifest):
             for tile_id, z, x, y in tiles:
                 span = 16384 / 2 ** z
                 data = vrt.read(window=Window(x * span, y * span, span, span),
-                                out_shape=(source.count, 256, 256), resampling=Resampling.bilinear)
+                                out_shape=(source.count, 256, 256),
+                                resampling=Resampling.average if z <= 3 else Resampling.bilinear)
                 if source.count == 1:
                     data = np.repeat(data, 3, axis=0)
                 image = Image.fromarray(np.moveaxis(data[:3], 0, -1))
@@ -130,12 +137,12 @@ def relief_tiles(out, manifest):
                 writer.write_tile(tile_id, output.getvalue())
             header = {'tile_compression': Compression.NONE, 'tile_type': TileType.WEBP,
                       'min_zoom': 0, 'max_zoom': 6,
-                      'min_lon_e7': int(BOUNDS[0] * 1e7), 'min_lat_e7': int(BOUNDS[1] * 1e7),
-                      'max_lon_e7': int(BOUNDS[2] * 1e7), 'max_lat_e7': int(BOUNDS[3] * 1e7),
+                      'min_lon_e7': int(VIEW_BOUNDS[0] * 1e7), 'min_lat_e7': int(VIEW_BOUNDS[1] * 1e7),
+                      'max_lon_e7': int(VIEW_BOUNDS[2] * 1e7), 'max_lat_e7': int(VIEW_BOUNDS[3] * 1e7),
                       'center_zoom': 3, 'center_lon_e7': int(18 * 1e7), 'center_lat_e7': int(40 * 1e7)}
             writer.finalize(header, {'name': 'Natural Earth shaded relief', 'attribution': 'Made with Natural Earth',
                                      'description': 'Modern physical reference geography; not reconstructed ancient terrain',
-                                     'format': 'webp', 'bounds': ','.join(map(str, BOUNDS)), 'minzoom': '0', 'maxzoom': '6'})
+                                     'format': 'webp', 'bounds': ','.join(map(str, VIEW_BOUNDS)), 'minzoom': '0', 'maxzoom': '6'})
     record['status'] = 'imported'
     record['accounting'] = {'tiles': len(tiles), 'source_pixels': [16200, 8100], 'tile_pixels': 256}
     print(f'Generated {len(tiles)} relief tiles.')
@@ -144,7 +151,7 @@ def relief_tiles(out, manifest):
 
 SCOPE = ['simple-base', 'natural-base', 'source-credits', *SOURCES]
 VECTORS = {'land': {'Polygon', 'MultiPolygon'}, 'rivers': {'LineString', 'MultiLineString'},
-           'lakes': {'Polygon', 'MultiPolygon'}, 'ocean': {'Polygon', 'MultiPolygon'}}
+           'lakes': {'Polygon', 'MultiPolygon'}, 'ocean': {'Polygon', 'MultiPolygon'}, 'coast': {'LineString', 'MultiLineString'}}
 PACK = {f'{layer}.geojson' for layer in VECTORS} | {'relief.pmtiles', 'sources.json'}
 FOUNDATION_FILES = {'catalog.json.gz','relations.json.gz'} | {f'{k}.geojson.gz' for k in ('settlements','roads','ports','maritime')}
 SHELL = {'layers.js', 'guide.js', 'foundation.js', 'search.js', 'details.js', '_headers', 'app.js', 'style.css', 'storage.js', 'index.html', 'sw.js', 'manifest.webmanifest',
@@ -210,14 +217,14 @@ def build():
              for name, value in hashes.items()]
     write_json(DIST / 'release.json', {'schema': 1, 'app_schema': 1, 'scope': SCOPE, 'id': version,
                'datasets': [{'id':r['id'], 'label':r['label']} for r in manifest['sources'] if r['id'] in SOURCES],
-               'bounds': BOUNDS, 'tile_zoom': [0, 6], 'view_zoom': [2, 7],
+               'bounds': BOUNDS, 'tile_zoom': [0, 6], 'view_bounds': VIEW_BOUNDS, 'view_zoom': [1, 7],
                'files': files, 'bytes': sum(f['bytes'] for f in files)})
     cached = sorted((shell | {'release.json'}) - {'sw.js', '_headers'})
     # Response rules can change the bytes previously cached by browsers.
     versioned = sorted(shell | {'release.json'})
     identity = hashlib.sha256(''.join(digest(DIST / p) for p in versioned).encode()).hexdigest()[:16]
-    worker = (WEB / 'sw.js').read_text().replace('__SHELL_VERSION__', identity)
-    (DIST / 'sw.js').write_text(worker.replace('__SHELL_FILES__', json.dumps(['/' + p for p in cached])))
+    worker = (WEB / 'sw.js').read_text(encoding='utf-8').replace('__SHELL_VERSION__', identity)
+    (DIST / 'sw.js').write_text(worker.replace('__SHELL_FILES__', json.dumps(['/' + p for p in cached])), encoding='utf-8')
     verify()
 
 
@@ -230,19 +237,59 @@ def verify():
     manifest, shell = check_inputs()
     release = json.loads((DIST / 'release.json').read_bytes())
     assert release['scope'] == SCOPE and release['bounds'] == BOUNDS
-    assert release['tile_zoom'] == [0, 6] and release['view_zoom'] == [2, 7]
+    assert release['tile_zoom'] == [0, 6] and release['view_zoom'] == [1, 7] and release['view_bounds'] == VIEW_BOUNDS
     prefix = 'packs/' + release['id'] + '/'
     import gzip
     pack = DIST / prefix
     with gzip.open(pack / 'catalog.json.gz','rt') as file:
         catalog = json.load(file)['records']
     assert len(catalog) == len({r['id'] for r in catalog}) == 49711
-    shards = {r['detail'] for r in catalog}
+    counts_by_source = Counter(r['source'] for r in catalog)
+    assert counts_by_source == dict(zip(SOURCES, (1390, 14771, 885, 32665))), counts_by_source
+    ids = {r['id'] for r in catalog}
+    expected_ids = defaultdict(set)
+    for row in catalog:
+        expected_ids[row['detail']].add(row['id'])
+    shards = set(expected_ids)
+    def unpack(name):
+        return json.loads(gzip.decompress((pack / name).read_bytes()))
+    regional_names = 0
+    for name, keys in expected_ids.items():
+        entries = unpack(name)
+        assert set(entries) == keys and all(detail['id'] == key for key, detail in entries.items()), name
+        regional_names += sum(len(d.get('names', [])) for d in entries.values())
+    assert regional_names == 29150
+    nodes = [r for r in catalog if r['id'].startswith('orbis:place:')]
+    assert len(nodes) == 301 and sum(r.get('layer') == 'ports' and 'bbox' in r for r in nodes) == 294
+    assert sum('layer' not in r and 'bbox' not in r for r in nodes) == 7
+    study = box(*BOUNDS)
+    nearest_display = math.inf
+    for layer, size in [('roads',14769), ('ports',294), ('maritime',584), ('settlements',1388)]:
+        fc = unpack(layer+'.geojson.gz')
+        assert fc['type'] == 'FeatureCollection' and len(fc['features']) == size
+        layer_ids = {r['id'] for r in catalog if r.get('layer') == layer}
+        assert {f['properties']['id'] for f in fc['features']} == layer_ids
+        kinds = {'Point'} if layer in ('ports', 'settlements') else {'LineString', 'MultiLineString'}
+        for feature in fc['features']:
+            geometry = feature['geometry']
+            geom = shape(geometry)
+            assert feature['type'] == 'Feature' and geom.geom_type in kinds and geom.is_valid and not geom.is_empty
+            assert study.covers(geom), feature['properties']['id']
+            if layer == 'roads' and feature['properties']['certainty'] == 'Certain':
+                coords = geometry['coordinates']
+                lines = [coords] if geometry['type'] == 'LineString' else coords
+                nearest_display = min(nearest_display, roma_distance_km(lines))
+    assert nearest_display < 2, f'Exported roads are {nearest_display:.3f} km from Roma'
+    edges = unpack('relations.json.gz')
+    assert len(edges) == 1168 and all(e['from'] in ids and e['to'] in ids for e in edges)
+    credits = {r['id']: r for r in json.loads((pack / 'sources.json').read_bytes())['sources']}
+    assert credits['itinere']['accounting']['roma_vertex_km'] < 2
     package_files = PACK | FOUNDATION_FILES | shards
     expected = shell | {'release.json'} | {prefix + name for name in package_files}
     paths = {str(p.relative_to(DIST)): p for p in DIST.rglob('*') if p.is_file()}
     assert set(paths) == expected and len(paths) <= 20000
     assert max(p.stat().st_size for p in paths.values()) <= 25 * 1024 ** 2
+    assert len(release['files']) == len(package_files)
     assert {f['path'] for f in release['files']} == {prefix + name for name in package_files}
     assert release['bytes'] == sum(f['bytes'] for f in release['files'])
     for item in release['files']:
@@ -251,14 +298,16 @@ def verify():
     for path in shell - {'sw.js'}:
         assert digest(DIST / path) == digest(WEB / path)
     pack = DIST / prefix
-    clip = box(*BOUNDS)
+    clip = box(*VIEW_BOUNDS)
     counts = {}
     for name, kinds in VECTORS.items():
         collection = json.loads((pack / (name + '.geojson')).read_bytes())
         features = collection['features']
         assert collection['type'] == 'FeatureCollection' and features
         counts[name] = len(features)
-        if name != 'ocean':
+        if name == 'coast':
+            assert all(shape(f['geometry']).disjoint(clip.boundary) for f in features)
+        if name not in ('ocean', 'coast'):
             record = next(r for r in manifest['sources'] if r['id'] == 'natural-earth-' + name)
             assert counts[name] == record['accounting']['output']
         for f in features:
@@ -268,8 +317,8 @@ def verify():
     data = (pack / 'relief.pmtiles').read_bytes()
     reader = Reader(lambda offset, length: data[offset:offset + length])
     header = reader.header()
-    assert header['addressed_tiles_count'] == 258 and header['tile_type'] == TileType.WEBP
-    assert [header[k + '_e7'] / 1e7 for k in ('min_lon', 'min_lat', 'max_lon', 'max_lat')] == BOUNDS
+    assert header['tile_type'] == TileType.WEBP
+    assert [header[k + '_e7'] / 1e7 for k in ('min_lon', 'min_lat', 'max_lon', 'max_lat')] == VIEW_BOUNDS
     assert (header['min_zoom'], header['max_zoom']) == (0, 6)
     count = 0
     for z in range(7):
@@ -280,16 +329,43 @@ def verify():
                     assert image.format == 'WEBP' and image.size == (256, 256)
                     image.load()
                 count += 1
-    assert count == 258
+    assert count == header['addressed_tiles_count'] == 394
     print(json.dumps({'release': release['id'], 'tiles': count, 'features': counts,
+                      'catalog': dict(counts_by_source), 'shards': len(shards), 'relations': len(edges),
+                      'regional_names': regional_names, 'ports': [294, 7], 'display_roma_vertex_km': nearest_display, 'roma_vertex_km': credits['itinere']['accounting']['roma_vertex_km'],
                       'static_files': len(paths), 'static_bytes': sum(p.stat().st_size for p in paths.values())}))
 
 
 def serve():
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-    server = ThreadingHTTPServer(('127.0.0.1', int(sys.argv[2]) if len(sys.argv) > 2 else 4173),
-                                 partial(SimpleHTTPRequestHandler, directory=DIST))
+    from fnmatch import fnmatchcase
+    from urllib.parse import urlsplit
+    import argparse
+
+    rules = {}
+    for line in (DIST / '_headers').read_text(encoding='utf-8').splitlines():
+        if line.startswith('/'):
+            headers = rules.setdefault(line, {})
+        elif line.strip():
+            key, value = line.strip().split(': ', 1)
+            headers[key] = value
+
+    class Handler(SimpleHTTPRequestHandler):
+        def end_headers(self):
+            path = urlsplit(self.path).path
+            for pattern, headers in rules.items():
+                if fnmatchcase(path, pattern):
+                    for key, value in headers.items():
+                        self.send_header(key, value)
+            super().end_headers()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('port', nargs='?', type=int, default=4173)
+    parser.add_argument('--host', default='127.0.0.1')
+    args = parser.parse_args(sys.argv[2:])
+    server = ThreadingHTTPServer((args.host, args.port),
+                                 partial(Handler, directory=DIST))
     server.serve_forever()
 
 

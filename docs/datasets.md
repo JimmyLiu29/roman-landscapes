@@ -8,18 +8,18 @@ Before we can understand where Roman roads ran or why cities grew in particular 
 #### What You Can See on the Map
 The atlas offers two base-map modes that can be switched at any time without losing your current position or selected records:
 - **Simple Geography Mode**: Displays clean land and sea contours (`land.geojson`, `ocean.geojson`, and coastline boundaries), designed for high-contrast inspection of dense road networks and settlement distributions.
-- **Natural Geography Mode**: Adds 258 pre-rendered shaded relief tiles (`z0–z6`, viewable up to `z7`) together with **232 major river centerlines** and **156 natural lakes**, highlighting the mountain barriers (such as the Alps, Apennines, Taurus, and Atlas ranges) and river corridors (the Rhine, Danube, Rhône, Po, Tiber, and Nile) that structured ancient movement.
+- **Natural Geography Mode**: Adds 394 pre-rendered shaded relief tiles (`z0–z6`, viewable up to `z7`) together with **318 river features** and **230 lake features**, highlighting the mountain barriers (such as the Alps, Apennines, Taurus, and Atlas ranges) and river corridors (the Rhine, Danube, Rhône, Po, Tiber, and Nile) that structured ancient movement.
 
 #### How Scholars Use It & Important Limitations
 - **Modern Physical Reference, Not Ancient Coastline Reconstruction**: Natural Earth depicts modern physical geography. Over the past two millennia, river deltas have silted up (for example, around Ostia at the mouth of the Tiber, or Miletus and Ephesus in western Asia Minor), and local coastlines or marshlands have shifted. The base map serves as a consistent physical reference frame rather than a paleogeographic reconstruction of antiquity.
-- **Exclusion of Modern Artificial Waterbodies**: Modern man-made features classified in Natural Earth as `Canal` or `Reservoir` (such as modern hydroelectric reservoirs on the Nile or Euphrates) are systematically filtered out during the build process (`230` lake polygons and `2` river segments excluded) so that modern engineering projects do not distort the ancient landscape.
+- **Exclusion of Modern Artificial Waterbodies**: Modern man-made features classified in Natural Earth as `Canal` or `Reservoir` (such as modern hydroelectric reservoirs on the Nile or Euphrates) are systematically filtered out within the buffered physical map (27°W–65°E, 8°N–67°N) (`45` lake polygons and `2` river segments excluded) so that modern engineering projects do not distort the ancient landscape.
 
 ---
 
 ### 2. Urban Settlements of the Roman World — *Oxford Hanson Cities Database* (`v1.0`, 2016)
 
 #### What Is This Dataset?
-Compiled by **J. W. Hanson** for the **Oxford Roman Economy Project (OxREP)** and published alongside his monograph *An Urban Geography of the Roman World, 100 BC to AD 300* (Archaeopress, 2016), this dataset is one of the most comprehensive catalogs of urban settlements across the Roman Empire during the Late Republic and Principate.
+Compiled by **J. W. Hanson** for the **Oxford Roman Economy Project (OxREP)** and published alongside his monograph *An Urban Geography of the Roman World, 100 BC to AD 300* (Archaeopress, 2016), this dataset is a catalog of urban settlements across the Roman Empire during the Late Republic and Principate.
 
 Why do historians care so much about cities? In the Roman world, cities (*civitates*, *coloniae*, *municipia*, and Greek *poleis*) were the primary engines of administration, taxation, monumental architecture, and regional market exchange. Mapping where cities were concentrated—and how large they grew—reveals the stark regional diversity between heavily urbanized zones (such as central Italy, Baetica, Africa Proconsularis, and western Asia Minor) and more sparsely urbanized frontier provinces.
 
@@ -40,20 +40,20 @@ The atlas integrates all **1,388 urban settlement records** from Hanson's databa
 ### 3. Terrestrial Road Networks — *Itiner-e: Roads of the Roman Empire* (`v1.3`, 2025)
 
 #### What Is This Dataset?
-Roman roads (*viae*) were the arteries of imperial governance, military deployment, postal communication (*cursus publicus*), and overland commerce. Published in *Scientific Data* (Nature Portfolio, 2025) by **Pau de Soto, Adam Pažout, Tom Brughmans, and colleagues** (Zenodo `17122148`, `v1.3`), **Itiner-e** is the most detailed open-access digital dataset of terrestrial road networks across the Roman Empire, synthesizing decades of archaeological surveys, milestone (*miliaria*) inscriptions, ancient itineraries (such as the *Antonine Itinerary* and the *Tabula Peutingeriana*), and regional historical maps.
+Roman roads (*viae*) were the arteries of imperial governance, military deployment, postal communication (*cursus publicus*), and overland commerce. Published in *Scientific Data* (Nature Portfolio, 2025) by **Pau de Soto, Adam Pažout, Tom Brughmans, and colleagues** (Zenodo `17122148`, `v1.3`), **Itiner-e** is an open-access digital dataset of terrestrial road networks across the Roman Empire, synthesizing decades of archaeological surveys, milestone (*miliaria*) inscriptions, ancient itineraries (such as the *Antonine Itinerary* and the *Tabula Peutingeriana*), and regional historical maps.
 
 #### What Is Included in *Roman Landscapes*
 The atlas includes all **14,769 road network segments** from the frozen Itiner-e `v1.3` release, together with its full field definitions and BibTeX bibliography. Every segment preserves its original source attributes, including segment identifier (`InLine_FID`), road name or route classification, construction/use date fields, digitizer attribution, and bibliographic references.
 
 Crucially, Itiner-e classifies every road segment by its **epistemic certainty**—how confident archaeologists and historians are about its exact physical course:
-- **Certain (`1,040` segments)**: Road alignments directly confirmed by surviving physical remains (paving, embankments, bridges, or *in situ* milestones).
-- **Conjectured (`12,952` segments)**: Routes whose existence and general corridor between known stations are well attested by ancient itineraries, topography, or scattered finds, even where continuous paving has not survived on the surface.
-- **Hypothetical (`777` segments)**: Proposed or secondary connections reconstructed from indirect regional or topographic evidence.
-- **Temporary Ferry Connectors (`2` segments, IDs `14767` and `14768`)**: Two short water-crossing links included in the upstream road network dataset to maintain graph continuity, explicitly labeled in the atlas as ferry connectors rather than paved roads.
+- **Certain (`1,040` segments)**: Well-documented segments digitized to within 50 m in mountainous terrain or 200 m on plains.
+- **Conjectured (`12,952` segments)**: Identified segments with less documentation and lower spatial accuracy.
+- **Hypothetical (`777` segments)**: Identified roads whose course is unlocated, variable or represented by parallel tracks, and proposed roads with insufficient evidence for a firmer classification.
+- **Temporary Ferry Connectors (`2` segments, IDs `14767` and `14768`)**: Two short water-crossing links included in the upstream road network dataset, explicitly labeled in the atlas as ferry connectors rather than paved roads.
 
 #### Methodological & Technical Notes
-- **Coordinate System Normalization**: Although the accompanying publication describes the data in standard geographic coordinates (`EPSG:4326`), the raw GeoJSON payload in release `v1.3` is encoded in projected World Mercator meters (`EPSG:3395`) with 3D `XYZ` coordinates. Our build pipeline deterministically transforms the horizontal geometry to `EPSG:4326` for accurate web mapping while retaining the full native coordinate metadata in each record's detail view.
-- **Sentinel Dates**: In the upstream dataset, numeric values of `0` and `9999` in the `Lower_Date` and `Upper_Date` columns are used as placeholder sentinels meaning "date unspecified / unknown," not the years `0` or `9999 CE`. The atlas normalizes these sentinel bounds to `unknown` in human-readable summaries while keeping the raw fields visible for inspection.
+- **Coordinate System Normalization**: Although the accompanying publication describes the data in standard geographic coordinates (`EPSG:4326`), the raw GeoJSON payload in release `v1.3` is encoded in projected World Mercator meters (`EPSG:3395`) with 3D `XYZ` coordinates. Our build pipeline transforms the horizontal geometry to `EPSG:4326` for accurate web mapping and preserves the original XYZ vertices and CRS under Original source fields.
+- **Sentinel Dates**: In the upstream dataset, numeric values of `0` and `9999` in the `Lower_Date` and `Upper_Date` columns are used as placeholder sentinels meaning "date unspecified / unknown," not the years `0` or `9999 CE`. The atlas normalizes these sentinel bounds to `unknown` in human-readable summaries while keeping the raw fields visible for inspection. The field definitions also mark zero in either error margin as uncertain.
 
 ---
 
@@ -67,8 +67,8 @@ Created by **Walter Scheidel, Elijah Meeks, and colleagues** at Stanford Univers
 #### What Is Included in *Roman Landscapes*
 The maritime layer contains **584 sea and ferry routes** connecting **294 mapped port and coastal nodes** (plus **7 unlocated node references** retained for documentary completeness). The routes are categorized into four distinct operational classes from the ORBIS model:
 - **Coastal routes (`441` routes)**: Short-haul cabotage segments hugging the coastline from port to port.
-- **Overseas routes (`69` routes)**: Open-water deep-sea crossings across major basins (for example, between Alexandria and Rome, or Carthage and Ostia) using primary sailing corridors.
-- **Slow overseas routes (`69` routes)**: Alternative open-water sailing paths modeling different seasonal wind regimes or slower vessel profiles.
+- **Overseas routes (`69` routes)**: Open-water deep-sea crossings across major basins.
+- **Slow overseas routes (`69` routes)**: The source classifies these modeled crossings as slowover. One example runs from Ostia/Portus to Caralis.
 - **Ferry crossings (`5` routes)**: Short strait or channel crossings connecting major land routes.
 
 #### Methodological & Technical Notes
@@ -83,7 +83,7 @@ The maritime layer contains **584 sea and ferry routes** connecting **294 mapped
 #### What Is This Dataset?
 Anyone studying the ancient world quickly runs into the problem of names: a single settlement might be known by a Greek name, several Latin spelling variants, a Late Antique title, and a modern Arabic, Italian, Turkish, or French toponym (for example, *Roma* / *Rhome*, *Byzantium* / *Constantinopolis* / *Istanbul*, or *Lugdunum* / *Lyon*).
 
-**Pleiades**—jointly supported by the Institute for the Study of the Ancient World (ISAW) at New York University and the Ancient World Mapping Center (AWMC) at UNC Chapel Hill—is the international standard community gazetteer of ancient places. Derived originally from the *Barrington Atlas of the Greek and Roman World* (edited by Richard J. A. Talbert, 2000) and continuously expanded by scholars worldwide, Pleiades assigns each ancient place a permanent, stable numeric identifier (a Pleiades URI/ID) and catalogs its attested names, chronological periods, and coordinate precision.
+**Pleiades**—jointly supported by the Institute for the Study of the Ancient World (ISAW) at New York University and the Ancient World Mapping Center (AWMC) at UNC Chapel Hill—is a community gazetteer of ancient places. Derived originally from the *Barrington Atlas of the Greek and Roman World* (edited by Richard J. A. Talbert, 2000) and continuously expanded by scholars worldwide, Pleiades assigns each ancient place a permanent, stable numeric identifier (a Pleiades URI/ID) and catalogs its attested names, chronological periods, and coordinate precision.
 
 #### What Is Included in *Roman Landscapes*
 The `v0.1` foundation release incorporates the **Pleiades `v4.1`** snapshot (`2025-05-28`), filtered to our geographic bounding box (`17°W–55°E, 15°N–63°N`):

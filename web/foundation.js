@@ -12,13 +12,13 @@ export function relationIndex(edges,byID) {
     if (!byID.has(edge.from)||!byID.has(edge.to)) continue;
     for (const [id,other] of [[edge.from,edge.to],[edge.to,edge.from]]) {
       if (!neighbors.has(id)) neighbors.set(id,[]);
-      neighbors.get(id).push({other:byID.get(other),role:({'source-endpoint':'Origin','target-endpoint':'Destination'})[edge.role] || edge.role});
+      neighbors.get(id).push({other:byID.get(other),role:edge.role,basis:edge.basis,reverse:id===edge.to});
     }
   }
   return neighbors;
 }
 
-export async function mountFoundation(map,release,load,preferences={},persist=()=>{}) {
+export async function mountFoundation(map,release,load,preferences={},persist=()=>{},sourcesById=new Map()) {
   const {datasets,groups}=registry(release);
   if (!datasets.length) return;
   const sources=new Map(datasets.map(d=>[d.id,d.label]));
@@ -70,14 +70,21 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   const picker=$('#overlap-picker'), choices=$('#overlap-records');
   let highlighted=null;
   function highlight() {
-    const shown=selected?.geometry && (!selected.record.layer || allowed(selected.record.layer,attributes.get(selected.record.id)));
+    const shown=selected?.geometry;
+    const banner=$('#selection-notice');
+    if (banner) banner.hidden=!shown || !selected.record.layer || allowed(selected.record.layer,attributes.get(selected.record.id));
     const id=shown ? selected.record.id : null;
     if (id===highlighted) return;
     highlighted=id;
     map.getSource('selected-record').setData(shown
       ? {type:'Feature',properties:{id:selected.record.id},geometry:selected.geometry} : empty);
   }
-  function showPicker() {
+  function revealPanel() {
+    if (matchMedia('(max-width:740px)').matches) $('.map-panel').scrollIntoView({block:'start'});
+    else $('#record-panel').scrollIntoView({block:'nearest'});
+  }
+  function showPicker(reveal=false) {
+    const focus=choices.contains(document.activeElement)?document.activeElement.dataset.record:null;
     const hits=overlap.filter(record=>allowed(record.layer,attributes.get(record.id)));
     picker.hidden=hits.length<2;
     choices.replaceChildren();
@@ -90,9 +97,12 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
       button.setAttribute('aria-pressed',String($('#record-panel').dataset.record===record.id));
       button.onclick=()=>select(record.id,null,'picker');
       choices.append(button);
+      if (record.id===focus) button.focus({preventScroll:true});
     }
+    if (reveal) revealPanel();
   }
-  for (const file of files) map.addSource(file.id,{type:'geojson',data:contents.get(file.id)});
+  for (const file of files) map.addSource(file.id,{type:'geojson',data:contents.get(file.id),
+    attribution:element('span',sources.get(sourceGroup.get(file.id).scope)).outerHTML});
   // Draw point symbols above linework; picking has a separate explicit priority.
   for (const style of styles.toSorted((a,b)=>b.priority-a.priority)) {
     const {priority,...spec}=style;
@@ -183,7 +193,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     panel.hidden=false; panel.dataset.record=id; delete panel.dataset.loaded;
     const locate=origin==='search' || origin==='relation';
     if (locate) overlap=[];
-    showPicker();
+    showPicker(); revealPanel();
     const body=$('#record-content'); body.replaceChildren(element('p','Loading record…'));
     selected=null; highlight();
     try {
@@ -195,36 +205,53 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
       try { shard=await cache.get(record.detail); } catch (error) {cache.delete(record.detail); throw error;}
       if (turn!==generation) return;
       const detail=shard[id];
-      body.replaceChildren(renderDetail(record,detail,neighbors.get(id)||[],(other,row)=>select(other,row,'relation'),focusRow));
+      const banner=element('p',"This record's layer or detail filter is currently hidden; the selected geometry is highlighted for inspection.");
+      banner.id='selection-notice'; banner.hidden=true;
+      body.replaceChildren(banner,renderDetail(record,detail,neighbors.get(id)||[],(other,row)=>select(other,row,'relation'),focusRow,sourcesById));
       selected={record,geometry:detail.geometry}; highlight();
       if (locate && record.bbox) map.fitBounds([[record.bbox[0],record.bbox[1]],[record.bbox[2],record.bbox[3]]],{maxZoom:6,padding:40,duration:0});
       panel.dataset.loaded=id;
       if (focusRow) body.querySelector('.selected-reference')?.focus();
-      else if (locate) panel.scrollIntoView({block:'nearest'});
-    } catch (error) {if (turn===generation) body.replaceChildren(element('p',error.message));}
+    } catch (error) {
+      if (turn!==generation) return;
+      body.replaceChildren(element('p',error.message));
+      if (error.status===404) {
+        const reload=element('button','Reload'); reload.onclick=()=>location.reload(); body.append(reload);
+      }
+    }
   }
-  $('#close-record').onclick=()=>{++generation; selected=null;overlap=[];showPicker();highlight();$('#record-panel').hidden=true;};
+  $('#close-record').onclick=()=>{++generation; selected=null;overlap=[];showPicker();highlight();$('#record-panel').hidden=true;$('#search').focus();};
   const filter=$('#search-source');
   for (const [id,title] of sources) filter.add(new Option(title,id));
   const categoryFilter=$('#search-category');
-  const categories=new Set(records.map(r=>r.category).filter(Boolean));
+  const kindOf=r=>r.category || r.kind;
+  const categories=new Set(records.map(kindOf).filter(Boolean));
   categoryFilter.hidden=!categories.size;
   for (const name of [...categories].sort()) categoryFilter.add(new Option(name,name));
   let hits=[], shown=0;
   function more() {
-    for (const {record,via} of hits.slice(shown,shown+25)) {
+    const focusMore=document.activeElement===$('#more-results');
+    const first=shown;
+    for (const {record} of hits.slice(shown,shown+25)) {
       const button=element('button',record.label.replace(/\s+/g,' ').trim());
-      button.append(element('small',sources.get(record.source)+(via?' · title found via Pleiades alias':'')));
+      const certainty=attributes.get(record.id)?.certainty;
+      const suffix=record.source==='itinere' && certainty?' · '+certainty+' · #'+record.id.split(':').at(-1):'';
+      button.append(element('small',sources.get(record.source)+suffix));
       button.dataset.record=record.id; button.onclick=()=>select(record.id);
       $('#search-results').append(button);
     }
     shown+=25; $('#more-results').hidden=shown>=hits.length;
+    if (focusMore && $('#more-results').hidden) $('#search-results').children[first]?.focus();
   }
   function search() {
-    hits=[...index.search($('#search').value,filter.value)].filter(hit=>!category || hit.record.category===category); shown=0;
+    const candidates=category && !filter.value && !$('#search').value.trim()
+      ? records.map(record=>({record})) : index.search($('#search').value,filter.value);
+    hits=[...candidates].filter(hit=>!category || kindOf(hit.record)===category); shown=0;
     $('#search-results').replaceChildren(); $('#search-status').textContent=hits.length+' results'; more();
   }
-  $('#search').oninput=filter.onchange=search; $('#more-results').onclick=more;
+  let timer;
+  $('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(search,120);};
+  filter.onchange=search; $('#more-results').onclick=more;
   categoryFilter.onchange=()=>{category=categoryFilter.value; search(); refresh();};
   const priority=new Map(styles.map(style=>[style.id,style.priority]));
   function hitsAt(point) {
@@ -254,6 +281,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     const props=attributes.get(record.id);
     let label=record.label;
     if(record.layer==='settlements') label+=' · Settlement ('+(props.rank==='-'?'unranked':'Rank '+props.rank)+')';
+    else if(props?.ferry) label+=' · Temporary ferry connector'+(props.certainty?' · '+props.certainty:'');
     else if(record.layer!=='maritime') label+=' · '+(props?.certainty || record.kind);
     tooltip.textContent=label; tooltip.hidden=false; canvas.style.cursor='pointer';
   }
@@ -270,7 +298,12 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   });
   map.on('click',event=>{
     overlap=hitsAt(event.point);
-    if (overlap.length) select(overlap[0].id,null,'map');
+    if (overlap.length>1) {
+      ++generation; selected=null; highlight();
+      const panel=$('#record-panel'); panel.hidden=false; delete panel.dataset.record; delete panel.dataset.loaded;
+      $('#record-content').replaceChildren(element('p','Choose a record to inspect.'));
+      showPicker(true);
+    } else if (overlap.length) select(overlap[0].id,null,'map');
     else showPicker();
   });
   refresh();
