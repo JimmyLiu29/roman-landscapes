@@ -47,6 +47,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   }
   const attributes=new Map(collections.flatMap(fc=>fc.features.map(f=>[f.properties.id,f.properties])));
   const state={...preferences,tiers:{...preferences?.tiers}};
+  if (state.tiers.maritime==='primary') state.tiers.maritime='overseas-ferry';
   for(const g of groups.filter(g=>g.tier)) {
     if(!g.tier.options.some(o=>o.id===state.tiers[g.id])) state.tiers[g.id]=g.tier.initial;
   }

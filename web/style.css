@@ -95,4 +95,4 @@ output { font: 12px ui-monospace, monospace; color: #435a5b; }
 #map-hover{position:absolute;top:10px;left:10px;max-width:calc(100% - 65px);padding:4px 9px;border-radius:4px;background:var(--paper);color:var(--ink);box-shadow:0 1px 4px #0003;font:600 13px/1.45 system-ui;pointer-events:none;overflow-wrap:anywhere}
 .legend i:is(.key-rank1,.key-rank2,.key-rank3,.key-rank4){background:#883d39;border:1px solid white;border-radius:50%}
 .legend .key-rank1{width:13px;height:13px}.legend .key-rank2{width:10px;height:10px}.legend .key-rank3{width:8px;height:8px}.legend .key-rank4{width:6px;height:6px}
-.legend i:is(.key-coastal,.key-slowover){width:18px;height:0;border:0;border-top:1px dashed #24548d;opacity:.55}.legend i.key-slowover{border-top-width:2px;opacity:.75}
+.legend i:is(.key-coastal,.key-slowover){width:18px;height:0;border:0;border-top:1px solid #6796b6}.legend i.key-slowover{border-top:2px dashed #24548d;opacity:.75}
