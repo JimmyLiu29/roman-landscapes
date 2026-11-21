@@ -1,0 +1,165 @@
+{
+  "schema": 1,
+  "sources": [
+    {
+      "accounting": {
+        "source_pixels": [
+          16200,
+          8100
+        ],
+        "tile_pixels": 256,
+        "tiles": 258
+      },
+      "advertised_version": "3.2.0",
+      "archive_version": "2.0.0",
+      "bytes": 25179752,
+      "citation": "Made with Natural Earth",
+      "id": "natural-earth-relief",
+      "landing_url": "https://www.naturalearthdata.com/downloads/",
+      "path": "data/raw/SR_LR.zip",
+      "publisher": "Natural Earth",
+      "retrieved": "2026-10-14",
+      "selection": {
+        "bounds": [
+          -17,
+          15,
+          55,
+          63
+        ],
+        "excluded_classes": [
+          "Canal",
+          "Reservoir"
+        ],
+        "raster_zoom": [
+          0,
+          6
+        ]
+      },
+      "sha256": "e3aa47b13aff26e1b4b3792a94100d8667d3147046aeac7840be00a15f839d18",
+      "status": "imported",
+      "terms": "Public domain",
+      "terms_url": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "url": "https://naturalearth.s3.amazonaws.com/10m_raster/SR_LR.zip"
+    },
+    {
+      "accounting": {
+        "empty": 0,
+        "excluded_class": 0,
+        "input": 11,
+        "output": 9,
+        "outside": 2
+      },
+      "advertised_version": "5.1.1",
+      "archive_version": "5.1.1",
+      "bytes": 3269070,
+      "citation": "Made with Natural Earth",
+      "display_simplification_degrees": 0.006,
+      "id": "natural-earth-land",
+      "landing_url": "https://www.naturalearthdata.com/downloads/",
+      "path": "data/raw/ne_10m_land.zip",
+      "publisher": "Natural Earth",
+      "retrieved": "2026-10-14",
+      "selection": {
+        "bounds": [
+          -17,
+          15,
+          55,
+          63
+        ],
+        "excluded_classes": [
+          "Canal",
+          "Reservoir"
+        ],
+        "raster_zoom": [
+          0,
+          6
+        ]
+      },
+      "sha256": "e547d749445eaa0964aba76738090ec88f5e63c4585122170f98c67a7ea922dc",
+      "status": "imported",
+      "terms": "Public domain",
+      "terms_url": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "url": "https://naturalearth.s3.amazonaws.com/10m_physical/ne_10m_land.zip"
+    },
+    {
+      "accounting": {
+        "empty": 0,
+        "excluded_class": 2,
+        "input": 1473,
+        "output": 232,
+        "outside": 1239
+      },
+      "advertised_version": "5.0.0",
+      "archive_version": "5.0.0",
+      "bytes": 2079507,
+      "citation": "Made with Natural Earth",
+      "display_simplification_degrees": 0.006,
+      "id": "natural-earth-rivers",
+      "landing_url": "https://www.naturalearthdata.com/downloads/",
+      "path": "data/raw/ne_10m_rivers_lake_centerlines.zip",
+      "publisher": "Natural Earth",
+      "retrieved": "2026-10-14",
+      "selection": {
+        "bounds": [
+          -17,
+          15,
+          55,
+          63
+        ],
+        "excluded_classes": [
+          "Canal",
+          "Reservoir"
+        ],
+        "raster_zoom": [
+          0,
+          6
+        ]
+      },
+      "sha256": "ded71b01870855ccfe19b51f2ec14c9bb48fae23c0e9f3c11974d426433b5c38",
+      "status": "imported",
+      "terms": "Public domain",
+      "terms_url": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "url": "https://naturalearth.s3.amazonaws.com/10m_physical/ne_10m_rivers_lake_centerlines.zip"
+    },
+    {
+      "accounting": {
+        "empty": 0,
+        "excluded_class": 230,
+        "input": 1355,
+        "output": 156,
+        "outside": 969
+      },
+      "advertised_version": "5.0.0",
+      "archive_version": "5.0.0",
+      "bytes": 2349685,
+      "citation": "Made with Natural Earth",
+      "display_simplification_degrees": 0.006,
+      "id": "natural-earth-lakes",
+      "landing_url": "https://www.naturalearthdata.com/downloads/",
+      "path": "data/raw/ne_10m_lakes.zip",
+      "publisher": "Natural Earth",
+      "retrieved": "2026-10-14",
+      "selection": {
+        "bounds": [
+          -17,
+          15,
+          55,
+          63
+        ],
+        "excluded_classes": [
+          "Canal",
+          "Reservoir"
+        ],
+        "raster_zoom": [
+          0,
+          6
+        ]
+      },
+      "sha256": "0803a06f9c3cb4671d89b68c48b142aad9366ba40f665245e12a913fbc61722a",
+      "status": "imported",
+      "terms": "Public domain",
+      "terms_url": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "url": "https://naturalearth.s3.amazonaws.com/10m_physical/ne_10m_lakes.zip"
+    }
+  ]
+}

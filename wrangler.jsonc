@@ -1,0 +1,16 @@
+{
+  "name": "roman-landscapes",
+  "compatibility_date": "2026-07-02",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "none"
+  },
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "romanlandscapes.org",
+      "custom_domain": true
+    }
+  ]
+}

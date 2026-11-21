@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#183d42">
+  <meta name="description" content="Explore the physical geography of the Roman world with regional coastlines, shaded relief, rivers and lakes.">
+  <title>Roman Landscapes: An Interactive Atlas of Economy, Transport, and History</title>
+  <link rel="icon" href="/icon-192.png"><link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/vendor/maplibre-gl/maplibre-gl.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <aside aria-label="Atlas controls">
+      <header>
+        <h1>Roman Landscapes</h1>
+        <p class="subtitle">Roman Landscapes: An Interactive Atlas of Economy, Transport, and History</p>
+      </header>
+      <section>
+        <fieldset><legend>Base map</legend>
+          <label class="mode"><input type="radio" name="mode" value="simple"><span><strong>Simple</strong><small>Land and sea</small></span></label>
+          <label class="mode"><input type="radio" name="mode" value="natural" checked><span><strong>Natural</strong><small>Shaded relief, rivers and lakes</small></span></label>
+        </fieldset>
+        <button id="reset" disabled>Reset regional view</button>
+      </section>
+      <section>
+        <h2>Offline maps</h2>
+        <p id="package-description">Both base maps and their sources.</p>
+        <button id="download" class="primary" disabled>Enable offline use</button>
+        <button id="cancel" hidden>Cancel download</button><button id="remove" hidden>Remove saved maps</button>
+        <progress id="progress" value="0" max="1" hidden aria-label="Download progress"></progress>
+        <p class="status" id="storage-status" role="status"></p>
+        <button id="install" hidden>Install atlas</button>
+        <button id="update-app" hidden>Reload updated atlas</button>
+      </section>
+      <details><summary>About</summary>
+        <p>A student project by Jimmy Liu, with guidance from Fang, Xinjie and Classical Cat Digital Humanities Lab.</p>
+      </details>
+      <details><summary>Sources &amp; map limits</summary>
+        <p>Made with Natural Earth. The map uses modern coastlines, terrain and watercourses as physical reference points for the Roman world. Ancient shorelines and rivers could follow different courses.</p>
+        <p>Coverage extends from 17°W–55°E, 15°N–63°N. The 258 relief tiles cover zooms 0–6. The map can be viewed at zooms 2–7, with zoom 7 enlarging existing detail.</p>
+        <p>The ocean is derived from the land outline. Water features classified as canals or reservoirs by Natural Earth are excluded.</p>
+        <ul id="credits"></ul><p><a href="https://www.naturalearthdata.com/about/terms-of-use/">Natural Earth public-domain terms</a></p>
+      </details>
+    </aside>
+    <section class="map-panel" aria-label="Regional map">
+      <div id="map" aria-label="Interactive physical map"></div>
+      <div id="map-error" role="alert" hidden></div>
+      <footer>
+        <div class="legend" aria-label="Current map legend"><strong id="mode-caption">Natural</strong>
+          <span><i class="land"></i>Land</span><span><i class="sea"></i>Sea</span>
+          <span data-natural><i class="relief"></i>Relief</span><span data-natural><i class="water"></i>Inland water</span>
+        </div>
+        <output id="coordinates" aria-label="Map centre and zoom"></output>
+      </footer>
+    </section>
+  </main>
+  <script src="/vendor/pmtiles/pmtiles.js"></script><script type="module" src="/app.js"></script>
+</body>
+</html>
