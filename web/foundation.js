@@ -69,7 +69,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   const picker=$('#overlap-picker'), choices=$('#overlap-records');
   let highlighted=null;
   function highlight() {
-    const shown=selected?.geometry && allowed(selected.record.layer,attributes.get(selected.record.id));
+    const shown=selected?.geometry && (!selected.record.layer || allowed(selected.record.layer,attributes.get(selected.record.id)));
     const id=shown ? selected.record.id : null;
     if (id===highlighted) return;
     highlighted=id;
@@ -263,13 +263,9 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   canvas.addEventListener('mouseleave',()=>{pointer=null; clearHover();});
   map.on('movestart',clearHover);
   map.on('idle',scheduleHover);
-  const autoGroup=groups.find(g=>g.tier?.atZoom);
-  let lastAuto=autoGroup?.tier.atZoom(map.getZoom());
+  const autoGroups=groups.filter(group=>group.tier?.atZoom);
   map.on('zoom',()=>{
-    if (!autoGroup) return;
-    const level=autoGroup.tier.atZoom(map.getZoom());
-    if(level!==lastAuto && state.tiers[autoGroup.id]==='auto') refresh();
-    lastAuto=level;
+    if (autoGroups.some(group=>state.tiers[group.id]==='auto' && effective(group)!==currentTier.get(group.id))) refresh();
   });
   map.on('click',event=>{
     overlap=hitsAt(event.point);

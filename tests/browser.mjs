@@ -116,7 +116,7 @@ async function tierInteractions(page,open,loaded) {
   const tier=id=>page.locator('[data-tier="'+id+'"]');
   const ports=page.locator('[data-sublayer=ports]');
   const countText=id=>page.locator('[data-count="'+id+'"]').textContent();
-  const expected={settlements:{all:1388,medium:992,major:176},maritime:{all:584,open:143,primary:74},
+  const expected={settlements:{all:1388,medium:992,major:176,metropoleis:14},maritime:{all:584,open:143,primary:74},
     roads:{all:14769,probable:13992,certain:1040}};
   const observed={};
   for(const [group,options] of Object.entries(expected)) {
@@ -154,16 +154,24 @@ async function tierInteractions(page,open,loaded) {
   assert.equal(await page.locator('.key-port').isVisible(),false);
   assert.equal(await page.evaluate(()=>window.testMap.getLayoutProperty('ports','visibility')),'none');
   await ports.check();assert.match(await countText('maritime'),/294 ports/);
-  await tier('settlements').selectOption('auto');
+  for (const id of Object.keys(expected)) await tier(id).selectOption('auto');
   const zoomCounts=[];
-  for(const [z,n] of [[3.8,176],[4,992],[4.9,992],[5,1388],[6,1388]]) {
+  async function checkBand(z,towns,roads,routes) {
     await page.evaluate(z=>window.testMap.jumpTo({zoom:z}),z);
-    assert.equal(await countText('settlements'),' ('+n.toLocaleString('en-US')+')');
-    zoomCounts.push([z,n]);
+    assert.equal(await countText('settlements'),' ('+towns.toLocaleString('en-US')+')');
+    assert.equal(await countText('roads'),' ('+roads.toLocaleString('en-US')+')');
+    assert.equal(await countText('maritime'),' ('+routes+' routes · 294 ports)');
+    zoomCounts.push([z,towns,roads,routes]);
   }
-  await tier('settlements').selectOption('major');
-  await page.evaluate(()=>window.testMap.jumpTo({zoom:6.5}));
-  assert.equal(await countText('settlements'),' (176)');
+  for(const band of [[4.49,176,1040,74],[4.5,992,13992,74],[4.79,992,13992,74],
+    [4.8,992,13992,143],[5.59,992,13992,143],[5.6,1388,14769,143],[4,176,1040,74]]) {
+    await checkBand(...band);
+  }
+  await tier('settlements').selectOption('metropoleis');
+  await checkBand(6.5,14,14769,143);
+  await tier('roads').selectOption('certain');await tier('maritime').selectOption('all');
+  await checkBand(4,14,1040,584);
+  await checkBand(6.5,14,1040,584);
   await tier('settlements').selectOption('all');
   await tier('roads').selectOption('all'); await tier('maritime').selectOption('all');
   const camera=()=>page.evaluate(()=>[...window.testMap.getCenter().toArray(),window.testMap.getZoom()]);
@@ -235,7 +243,7 @@ async function tierInteractions(page,open,loaded) {
   assert.equal(await page.evaluate(()=>window.testFits),4);
   await tier('settlements').selectOption('all');
   await page.locator('[data-layer=maritime]').check();await page.locator('[data-layer=roads]').check();
-  proof.detailFilters={counts:observed,autoByZoom:zoomCounts,manualAtZoom65:176,
+  proof.detailFilters={counts:observed,autoByZoom:zoomCounts,manualAtZoom65:{towns:14,roads:1040,routes:584},
     hover:'Roma · Settlement (Rank 1)',overlapCityRanks:ranks,mapAndPickerCamera:before,searchCamera:located,
     isolatedCity:isolated,isolatedClickCamera:isolatedCamera,filteredCityExcludedFromHits:true,
     directAndPickerFitCalls:0,searchAndRelationFitCalls:3};
@@ -276,7 +284,18 @@ async function observeMap(page) {
     return Object.fromEntries(layers.map(id=>[id,new Set(m.queryRenderedFeatures({layers:[id]}).map(f=>f.properties.id)).size]));
   });
   assert(startup.settlements>0 && startup.roads>0 && startup.maritime>0 && startup.ports===0);
-  proof.defaultRendered=startup;
+  const first=await page.evaluate(()=>{
+    const m=window.testMap, hits=id=>m.queryRenderedFeatures({layers:[id]});
+    return {zoom:m.getZoom(),counts:[...document.querySelectorAll('[data-count]')].map(x=>x.textContent.trim()),
+      ranks:[...new Set(hits('settlements').map(f=>f.properties.rank))].sort(),
+      certainty:[...new Set(hits('roads').map(f=>f.properties.certainty))].sort(),
+      water:[...new Set(hits('maritime').map(f=>f.properties.t))].sort(),tentative:hits('roads-tentative').length};
+  });
+  assert.equal(first.zoom.toFixed(1),'3.4');
+  assert.deepEqual(first.counts,['(176)','(1,040)','(74 routes · 0 ports)']);
+  assert.deepEqual(first.ranks,['1','2']);assert.deepEqual(first.certainty,['Certain']);
+  assert.deepEqual(first.water,['ferry','overseas']);assert.equal(first.tentative,0);
+  proof.defaultRendered=startup;proof.defaultView=first;
 }
 
 async function interactions(page) {
@@ -298,10 +317,38 @@ async function interactions(page) {
   const style=await page.evaluate(()=>{
     const m=window.testMap;
     return {roads:m.getPaintProperty('roads','line-width'),color:m.getPaintProperty('roads','line-color'),
+      roadOpacity:m.getPaintProperty('roads','line-opacity'),radius:m.getPaintProperty('settlements','circle-radius'),
+      stroke:m.getPaintProperty('settlements','circle-stroke-width'),seaWidth:m.getPaintProperty('maritime','line-width'),
+      seaOpacity:m.getPaintProperty('maritime','line-opacity'),
       tentative:m.getPaintProperty('roads-tentative','line-dasharray'),maritime:m.getPaintProperty('maritime','line-dasharray'),
       filter:m.getFilter('roads-tentative')};
   });
-  assert(style.roads.includes('Certain') && style.roads[3]>style.roads[4] && style.color[3]!==style.color[4]);
+  // Sample the linear stops installed in MapLibre for each native class.
+  function paintValue(expression,zoom,value) {
+    assert.deepEqual(expression.slice(0,3),['interpolate',['linear'],['zoom']]);
+    const stops=[];
+    for(let i=3;i<expression.length;i+=2) {
+      const match=expression[i+1];assert.equal(match[0],'match');
+      const index=match.findIndex((entry,j)=>j>=2 && j%2===0 && entry===value);
+      stops.push([expression[i],index<0?match.at(-1):match[index+1]]);
+    }
+    if (zoom<=stops[0][0]) return stops[0][1];
+    for(let i=1;i<stops.length;i++){
+      const [z0,v0]=stops[i-1], [z1,v1]=stops[i];
+      if(zoom<=z1) return Number((v0+(v1-v0)*(zoom-z0)/(z1-z0)).toFixed(4));
+    }
+    return stops.at(-1)[1];
+  }
+  const samples=(expr,zooms,value)=>zooms.map(z=>paintValue(expr,z,value));
+  assert.deepEqual(samples(style.radius,[3,5,7],'1'),[4.2,5.4,6.8]);
+  assert.deepEqual(samples(style.radius,[3,3.4,5,7],'2'),[2.5,2.76,3.8,5]);
+  assert.deepEqual(samples(style.radius,[5,7],'3'),[2.8,3.8]);
+  assert.equal(paintValue(style.radius,7,'4 or 5'),2.8);assert.equal(paintValue(style.stroke,3,'2'),0.5);
+  assert.deepEqual(samples(style.roads,[3,7],'Certain'),[1.15,2.4]);
+  assert.deepEqual(samples(style.roads,[3,7],'Conjectured'),[0.65,1.4]);
+  assert.deepEqual(samples(style.roadOpacity,[3,6],'Conjectured'),[0.55,0.82]);
+  assert.deepEqual(samples(style.seaWidth,[3,7],'overseas'),[1.25,2.2]);
+  assert.equal(paintValue(style.seaOpacity,3,'overseas'),0.68);assert.notEqual(style.color[3],style.color[4]);
   assert(style.tentative.length && style.maritime.length && JSON.stringify(style.filter).includes('Hypothetical') && JSON.stringify(style.filter).includes('ferry'));
   const loaded=id=>page.locator('#record-panel[data-loaded="'+id+'"]').waitFor();
   const open=async id=>{
@@ -331,6 +378,10 @@ async function interactions(page) {
       for(const g of groups) await toggle(g).uncheck();
       assert.equal((await selection()).properties.id,id);
       await waitForLayer('selected-point');
+      const highlighted=await page.evaluate(()=>window.testMap.queryRenderedFeatures({layers:['selected-point']})
+        .map(f=>({id:f.properties.id,geometry:f.geometry.type,layer:f.layer.type})));
+      assert(highlighted.some(f=>f.id===id && f.geometry==='Point' && f.layer==='circle'));
+      proof.pleiadesHighlight={id,source:(await selection()).type,rendered:'circle',baseGroupsOn:0};
       for(const g of groups) await toggle(g).check();
     }
     geometries[id]=type;
@@ -474,7 +525,7 @@ try {
   await layout(page, 1440);
   await observeMap(page);
   if (process.env.ATLAS_SCREENSHOT) await page.screenshot({path:process.env.ATLAS_SCREENSHOT});
-  assert.deepEqual(await page.locator('[data-tier]').evaluateAll(ns=>ns.map(n=>n.value)),['auto','all','open']);
+  assert.deepEqual(await page.locator('[data-tier]').evaluateAll(ns=>ns.map(n=>n.value)),['auto','auto','auto']);
   assert.equal(await page.locator('[data-sublayer=ports]').isChecked(),false);
   await foundation(page,true);
   await interactions(page);
