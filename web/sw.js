@@ -2,7 +2,7 @@ const SHELL = 'atlas-shell-__SHELL_VERSION__';
 // Cache the canonical root; static hosts may redirect /index.html to /.
 const FILES = __SHELL_FILES__.map(file => file === '/index.html' ? '/' : file);
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(SHELL).then(cache => cache.addAll(FILES)));
+  event.waitUntil(caches.open(SHELL).then(cache => cache.addAll(FILES.map(path => new Request(path, { cache: 'reload' })))));
 });
 self.addEventListener('activate', event => {
   event.waitUntil(self.clients.claim());

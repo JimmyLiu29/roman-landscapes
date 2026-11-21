@@ -201,7 +201,9 @@ def build():
                'bounds': BOUNDS, 'tile_zoom': [0, 6], 'view_zoom': [2, 7],
                'files': files, 'bytes': sum(f['bytes'] for f in files)})
     cached = sorted((shell | {'release.json'}) - {'sw.js', '_headers'})
-    identity = hashlib.sha256((''.join(digest(DIST / p) for p in cached) + digest(WEB / 'sw.js')).encode()).hexdigest()[:16]
+    # Response rules can change the bytes previously cached by browsers.
+    versioned = sorted(shell | {'release.json'})
+    identity = hashlib.sha256(''.join(digest(DIST / p) for p in versioned).encode()).hexdigest()[:16]
     worker = (WEB / 'sw.js').read_text().replace('__SHELL_VERSION__', identity)
     (DIST / 'sw.js').write_text(worker.replace('__SHELL_FILES__', json.dumps(['/' + p for p in cached])))
     verify()
