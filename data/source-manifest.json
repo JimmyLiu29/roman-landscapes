@@ -241,6 +241,179 @@
       "url": "https://zenodo.org/records/17122148/files/itinere_roads.geojson?download=1",
       "version": "v1.3; static version 2024; published 2025-09-15",
       "label": "Itiner-e"
+    },
+    {
+      "id": "oxford-mines",
+      "label": "Oxford Mines",
+      "publisher": "Oxford Roman Economy Project",
+      "version": "3.0 (2025), workbook dated 2025-04-08",
+      "citation": "Wilson, A. I. (2025). Database of Roman mines, Version 3.0 (OxREP databases).",
+      "landing_url": "https://oxrep.web.ox.ac.uk/mines-database",
+      "terms": "OxREP / Oxford University Research Archive (ORA) terms: non-commercial academic and teaching use; cite the database and associated scholarly publication(s) as specified. No standalone raw dataset download or redistribution is provided.",
+      "terms_url": "https://ora.ox.ac.uk/terms_of_use",
+      "url": "https://oxrep.web.ox.ac.uk/sitefiles/oxrep-mines-3.0-20250408.xlsx",
+      "sha256": "802e35d0abef469fb7683b3b82b1638224db059f19919a2e245ce44ec757815a",
+      "bytes": 340326,
+      "retrieved": "2026-10-14",
+      "path": "data/raw/oxford-mines/oxrep-mines-3.0-20250408.xlsx",
+      "acquisition_mode": "remote_url",
+      "selection": "All rows of the retained bulk export. Unlocated records remain searchable; original granularity and fields are retained."
+    },
+    {
+      "id": "oxford-shipwrecks",
+      "label": "Oxford Shipwrecks",
+      "publisher": "Oxford Roman Economy Project",
+      "version": "2.1 (March 2017)",
+      "citation": "Strauss, J., Wilson, A. I., and Flohr, M. (2017). OxREP Shipwrecks Database, Version 2.1.",
+      "landing_url": "https://oxrep.web.ox.ac.uk/shipwrecks-database",
+      "terms": "OxREP / Oxford University Research Archive (ORA) terms: non-commercial academic and teaching use; cite the database and associated scholarly publication(s) as specified. No standalone raw dataset download or redistribution is provided.",
+      "terms_url": "https://ora.ox.ac.uk/terms_of_use",
+      "url": "https://oxrep.web.ox.ac.uk/sitefiles/oxrep-shipwrecks-database-2.1-march-2017.xlsx",
+      "sha256": "eaf55526903599c0ef4ca10bc34daf942317f24649f6a253ab8b56876338bc2c",
+      "bytes": 656931,
+      "retrieved": "2026-10-14",
+      "path": "data/raw/oxford-shipwrecks/oxrep-shipwrecks-database-2.1-march-2017.xlsx",
+      "acquisition_mode": "remote_url",
+      "selection": "All rows of the retained bulk export. Unlocated records remain searchable; original granularity and fields are retained."
+    },
+    {
+      "id": "oxford-karanis",
+      "label": "Karanis Tax Rolls",
+      "publisher": "Oxford Roman Economy Project",
+      "version": "2.0 (2024)",
+      "citation": "Cuffe, E., Bowman, A. K., and Dombrowski, J. (2024). Karanis Tax Rolls database, Version 2.0 (OxREP databases).",
+      "landing_url": "https://oxrep.web.ox.ac.uk/karanis-tax-database",
+      "terms": "OxREP / Oxford University Research Archive (ORA) terms: non-commercial academic and teaching use; cite the database and associated scholarly publication(s) as specified. No standalone raw dataset download or redistribution is provided.",
+      "terms_url": "https://ora.ox.ac.uk/terms_of_use",
+      "url": "https://oxrep.web.ox.ac.uk/sitefiles/karanis-tax-rolls-2024.xlsx",
+      "sha256": "f9d85e661dc865b8d0a6c180bc1724cee6973e20d419d9dfe9fccc9c3dba5fd5",
+      "bytes": 1925776,
+      "retrieved": "2026-10-14",
+      "path": "data/raw/oxford-karanis/karanis-tax-rolls-2024.xlsx",
+      "acquisition_mode": "remote_url",
+      "assets": [
+        {
+          "role": "place-crosswalk",
+          "acquisition_mode": "tracked_in_repo",
+          "path": "data/place-crosswalks.json",
+          "bytes": 785,
+          "sha256": "109dad928baf8bea8d5d066dc23df92a65d2f457edc9e8cc020a16bebb03f2c5"
+        }
+      ],
+      "selection": "All rows of the retained bulk export. Unlocated records remain searchable; original granularity and fields are retained."
+    },
+    {
+      "id": "raad",
+      "label": "RAAD amphorae",
+      "publisher": "Tyler V. Franconi / Zenodo",
+      "version": "1.0.0 (2021), original Zenodo workbook",
+      "citation": "Franconi, T. V. (2021). Roman Amphorae Assemblages Database, v1.0.0. doi:10.5281/zenodo.5213724.",
+      "landing_url": "https://zenodo.org/records/5213724",
+      "terms": "CC BY 1.0 Generic. Redistribution and adaptation permitted with attribution, licence link and identification of adaptations. Native workbook reshaped into records; quantities and source fields retained.",
+      "terms_url": "https://creativecommons.org/licenses/by/1.0/",
+      "url": "https://zenodo.org/records/5213724/files/RAAD%20data_final.xlsx?download=1",
+      "sha256": "0ac50264da81450de84921dbee225af1a629e61b71b28183e0aa5e912609b514",
+      "bytes": 414050,
+      "retrieved": "2026-10-14",
+      "limitations": [
+        "Only the original CC BY workbook is delivered. Source quantification methods and native geographic/typological uncertainty remain distinct."
+      ],
+      "path": "data/raw/raad/RAAD data_final.xlsx",
+      "acquisition_mode": "remote_url",
+      "selection": "Complete original CC BY workbook; observations reshaped directly from native matrix cells."
+    },
+    {
+      "id": "oxford-presses",
+      "label": "Oxford Oil / Wine Presses",
+      "publisher": "Oxford Roman Economy Project",
+      "version": "Legacy native CSV snapshot 2026-10-14; database v1.0",
+      "citation": "Wilson, A. I. and Marzano, A. (2015). Database of Roman Olive Oil and Wine Presses, Version 1.0 (OxREP databases). Accessed 14 October 2026.",
+      "landing_url": "https://oxrep.web.ox.ac.uk/oil-wine-database",
+      "terms": "OxREP / Oxford University Research Archive (ORA) terms: non-commercial academic and teaching use; cite the database and associated scholarly publication(s) as specified. No standalone raw dataset download or redistribution is provided.",
+      "terms_url": "https://ora.ox.ac.uk/terms_of_use",
+      "url": "https://oxrep.classics.ox.ac.uk/oxrep/modules/databases/output/csv.php",
+      "sha256": "badf9525f51d018d20ff81c8e2b7650f1923fb4746a671624e830e3e966daa3b",
+      "bytes": 20630,
+      "retrieved": "2026-10-14",
+      "limitations": [
+        "Complete available grouped CSV: 232 rows; source interface advertises 233 records. No installation IDs or per-record bibliography. Six numeric coordinate exceptions and one unlocated row remain in the archive; no coordinates corrected.",
+        "Source construction/abandonment dates are post_0/ante_0 and post_1/ante_1; -999/999 mean unspecified. Raw outside-bound coordinate for Iluratum is retained without correction."
+      ],
+      "path": "data/raw/oxford-presses/oxford-presses.csv",
+      "acquisition_mode": "pinned_local_snapshot",
+      "selection": "All rows of the retained bulk export. Unlocated records remain searchable; original granularity and fields are retained."
+    },
+    {
+      "id": "oxford-quarries",
+      "label": "Oxford Stone Quarries",
+      "publisher": "Oxford Roman Economy Project",
+      "version": "Legacy native CSV snapshot 2026-10-14; database v1.0",
+      "citation": "Russell, B. J. (2013), Gazetteer of Stone Quarries in the Roman World, Version 1.0 (OxREP databases / University of Edinburgh DataShare).",
+      "landing_url": "https://oxrep.web.ox.ac.uk/stone-quarries-database",
+      "terms": "OxREP / Oxford University Research Archive (ORA) terms: non-commercial academic and teaching use; cite both the OxREP database and the Russell Edinburgh dataset. No standalone raw dataset download or redistribution is provided.",
+      "terms_url": "https://ora.ox.ac.uk/terms_of_use",
+      "url": "https://oxrep.classics.ox.ac.uk/oxrep/modules/databases/output/csv.php",
+      "sha256": "58c433a583904cd533bc5ff834d1df9a286620a229e26a788e05f5a2f0f80c19",
+      "bytes": 106146,
+      "retrieved": "2026-10-14",
+      "limitations": [
+        "Archive only: complete 792-row native CSV has no coordinates or external place IDs; no map positions inferred. Numeric fsk_* values are material codes, not quantities."
+      ],
+      "path": "data/raw/oxford-quarries/oxford-quarries.csv",
+      "acquisition_mode": "pinned_local_snapshot",
+      "selection": "All rows of the retained bulk export. Unlocated records remain searchable; original granularity and fields are retained."
+    },
+    {
+      "id": "oxford-water",
+      "label": "Oxford Water Technologies",
+      "publisher": "Oxford Roman Economy Project",
+      "version": "Legacy native CSV snapshot 2026-10-14; database v1.0",
+      "citation": "Malouta, M. (2008). Water-lifting technology database, Version 1.0 (OxREP databases). Accessed 14 October 2026.",
+      "landing_url": "https://oxrep.web.ox.ac.uk/water-technologies-database",
+      "terms": "OxREP / Oxford University Research Archive (ORA) terms: non-commercial academic and teaching use; cite the database and associated scholarly publication(s) as specified. No standalone raw dataset download or redistribution is provided.",
+      "terms_url": "https://ora.ox.ac.uk/terms_of_use",
+      "url": "https://oxrep.classics.ox.ac.uk/oxrep/modules/databases/output/csv.php",
+      "sha256": "bc25b6add614bdc1a33b5e7a89000466c66bddc799fee98c12ee8c707508738d",
+      "bytes": 70240,
+      "retrieved": "2026-10-14",
+      "limitations": [
+        "Archive only: 622 source references, with English classifications and native document place/area links; no map coordinates. All Greek drword cells contain source-export question marks. The damaged word text is retained and explicitly flagged; it is not a recovered transcription."
+      ],
+      "path": "data/raw/oxford-water/oxford-water.csv",
+      "acquisition_mode": "pinned_local_snapshot",
+      "selection": "All rows of the retained bulk export. Unlocated records remain searchable; original granularity and fields are retained."
+    },
+    {
+      "id": "wikidata-history",
+      "label": "Wikidata · Roman political and military history",
+      "publisher": "Wikidata contributors",
+      "version": "Wikidata full JSON snapshot 2026-10-12; reviewed local census extract",
+      "citation": "Wikidata contributors. Roman Republican and Imperial political and military entities, full JSON snapshot of 12 October 2026. Original entity revisions, statements, qualifiers and references retained.",
+      "landing_url": "https://www.wikidata.org/",
+      "terms": "CC0 1.0 for structured Wikidata data. Editorial place correspondences are identified separately.",
+      "terms_url": "https://www.wikidata.org/wiki/Wikidata:Data_access#Using_Wikidata%27s_data",
+      "url": "https://dumps.wikimedia.org/wikidatawiki/entities/20261012/wikidata-20261012-all.json.bz2",
+      "sha256": "9616e80569dda4e76b5baea4c49f838ff4ec7d22ae886eb5604cafcb3ab870b8",
+      "bytes": 9560323,
+      "retrieved": "2026-10-19",
+      "limitations": [
+        "Resolved life or event dates do not date every town association or imply all offices preceded 565 CE.",
+        "Town identity follows explicit crosswalks or native identifiers; Wikidata assertions may still contain source errors or lack references.",
+        "Participation and command are associations, not proof of personal presence. Birth, death and burial never substitute for activity.",
+        "Text-only Roman-context evidence is labelled in record details."
+      ],
+      "path": "data/raw/wikidata-history/entities.json.gz",
+      "acquisition_mode": "pinned_local_snapshot",
+      "assets": [
+        {
+          "role": "selection",
+          "acquisition_mode": "tracked_in_repo",
+          "path": "data/wikidata/selection.json",
+          "bytes": 1342088,
+          "sha256": "a9684a9489bfffdf68c4116d8ba26bb81e1b0ed85bc136effc45b23e5c925fe4"
+        }
+      ],
+      "selection": "Resolved period membership (509 BCE–565 CE), with documented or native-identifier town links. Biography and activity relations remain separate; automatic matches and uncertain dates remain candidates."
     }
   ]
 }

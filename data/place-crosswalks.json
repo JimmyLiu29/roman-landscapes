@@ -1,0 +1,13 @@
+[
+  {
+    "id": "karanis-archive-place",
+    "from": "karanis:archive",
+    "to": "pleiades:736932",
+    "role": "archive-place-association",
+    "basis": "Explicit collection-level crosswalk: Oxford identifies the Karanis tax-roll archive (TM Arch 63); Pleiades identifies Karanis/Kom Aushim (736932, TM GEO 1008). This is a documented archive association, not a supplied foreign key, transaction findspot or payer residence.",
+    "evidence": [
+      {"source": "oxford-karanis", "url": "https://oxrep.web.ox.ac.uk/karanis-tax-database", "locator": "Collection description; Karanis tax rolls and TM Arch 63"},
+      {"source": "pleiades", "url": "https://pleiades.stoa.org/places/736932", "locator": "Karanis, Kom Aushim; linked TM GEO 1008; retained v4.1 place 736932"}
+    ]
+  }
+]

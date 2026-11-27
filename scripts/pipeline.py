@@ -165,27 +165,16 @@ def input_files(manifest):
 
 
 def acquire():
-    """Restore primary inputs and companion files, verifying each snapshot hash."""
-    for record in input_files(json.loads(MANIFEST.read_bytes())):
-        path = ROOT / record['path']
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if not path.exists():
-            with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as temp:
-                candidate = Path(temp.name)
-            try:
-                with urllib.request.urlopen(record['url'], timeout=120) as src, candidate.open('wb') as dst:
-                    shutil.copyfileobj(src, dst)
-                assert digest(candidate) == record['sha256'], 'Upstream snapshot differs from source lock'
-                candidate.replace(path)
-            finally:
-                candidate.unlink(missing_ok=True)
-        assert digest(path) == record['sha256'], 'Local input differs from source lock'
+    from inputs import main as acquire_inputs
+    acquire_inputs(sys.argv[2:] if __name__ == "__main__" else [])
 
 
 def check_inputs():
     manifest = json.loads(MANIFEST.read_bytes())
-    assert {r['id'] for r in manifest['sources']} == {
+    required = {
         'natural-earth-' + name for name in ['relief', 'land', 'rivers', 'lakes']} | set(SOURCES)
+    assert required <= {r['id'] for r in manifest['sources']}
+    manifest['sources'] = [r for r in manifest['sources'] if r['id'] in required]
     for record in input_files(manifest):
         assert digest(ROOT / record['path']) == record['sha256'], record['path']
     vendors = json.loads((ROOT / 'data/vendor-lock.json').read_bytes())

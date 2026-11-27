@@ -26,6 +26,7 @@ class ParserTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, 'broken'):
                 bibliography_entries('@book{broken, title='+bad)
 
+    @unittest.skipUnless((ROOT / "data/raw/itinere/Itiner-e bibliography.bib").exists(), "Source snapshot unavailable")
     def test_locked_bibliography(self):
         path = ROOT / 'data/raw/itinere/Itiner-e bibliography.bib'
         entries = bibliography_entries(path.read_text(encoding='utf-8'))
