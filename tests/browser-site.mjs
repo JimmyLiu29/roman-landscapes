@@ -169,9 +169,26 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
   await test('T-A4',async()=>{
     const edge=edges.find(e=>e.to==='pleiades:114765' && e.group==='economic_place');
     await openRecord(page,edge.from);await follow(page,'[data-related="'+edge.to+'"]');await follow(page,'[data-related="'+edge.from+'"]');
-    await openRecord(page,'karanis:archive');await body.getByRole('button',{name:/Browse .* transactions/}).click();
+    await openRecord(page,'karanis:archive');
+    const evidence=(await detail(rows.find(r=>r.id==='karanis:archive'))).crosswalk.evidence;
+    const items=body.getByRole('list',{name:'Crosswalk evidence'}).getByRole('listitem');
+    assert.equal(await items.count(),evidence.length);
+    assert(evidence.length>0);
+    for (const [i,{source,url,locator}] of evidence.entries()) {
+      const item=items.nth(i), link=item.getByRole('link',{name:source,exact:true});
+      assert.equal(await item.textContent(),source+' · '+locator);
+      if (['http:','https:'].includes(URL.parse(url)?.protocol)) {
+        assert.equal(await link.getAttribute('href'),new URL(url).href);
+        assert.equal(await link.getAttribute('target'),'_blank');
+        assert.equal(await link.getAttribute('rel'),'noopener noreferrer');
+      } else assert.equal(await link.count(),0);
+    }
+    assert.doesNotMatch(await body.textContent(),/"(?:url|locator|source)"\s*:/);
+    await body.getByRole('button',{name:/Browse .* transactions/}).click();
     assert.equal(await page.locator('#search-source').inputValue(),'oxford-karanis');
-    await page.locator('#search-results button').first().click();await follow(page,'[data-related="karanis:archive"]');
+    await page.locator('#search-results button').first().click();
+    await body.getByText('Collection archive (1 link)',{exact:true}).waitFor();
+    await follow(page,'[data-related="karanis:archive"]');
     await openRecord(page,town.id);await page.locator('#close-record').click();
     const coord=await page.evaluate(async id=>{
       const m=window.atlasTestMap;const fc=await m.getSource('settlements').getData();
@@ -180,7 +197,7 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
     await page.waitForFunction(()=>window.atlasTestMap.loaded());await page.locator('#map canvas').click({position:coord});
     assert.equal(await page.locator('#overlap-records button').first().getAttribute('data-record'),town.id);
     assert.equal(await page.locator('a[download],button[download]').count(),0);
-    return {overlapFirst:town.id,place:edge.to};
+    return {overlapFirst:town.id,place:edge.to,crosswalkEvidence:evidence.length};
   });
   await test('T-A10',async()=>{
     const people=rows.filter(r=>r.render_kind==='history_person');
@@ -190,6 +207,16 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
     assert.deepEqual(counts,fixture?[1,2,1,2,1,1]:[324,1208,414,944,150,794]);
     await openRecord(page,'wikidata:Q1048');
     const highlight=()=>page.evaluate(async()=>(await window.atlasTestMap.getSource('selected-record').getData()).features.map(f=>f.geometry));
+    const selection=await page.evaluate(()=>{
+      const layers=window.atlasTestMap.getStyle().layers;
+      const selected=layers.filter(l=>l.source==='selected-record');
+      return {aboveData:layers.slice(layers.indexOf(selected[0])).every(l=>l.source==='selected-record'),
+        layers:selected.map(l=>[l.id,l.paint])};
+    });
+    assert.deepEqual(selection,{aboveData:true,layers:[
+      ['selected-point',{'circle-radius':7,'circle-color':'#f0e442','circle-stroke-color':'#111111','circle-stroke-width':2}],
+      ['selected-line-casing',{'line-width':6,'line-color':'#111111'}],
+      ['selected-line',{'line-width':3,'line-color':'#f0e442'}]]});
     assert.equal((await highlight()).length,2);await layer('people').uncheck();assert.equal((await highlight()).length,1);
     await layer('people-biography').uncheck();assert.equal((await highlight()).length,2);assert(await page.locator('#selection-notice').isVisible());
     await layer('people').check();await openRecord(page,'wikidata:Q1407');
@@ -215,7 +242,7 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
       else assert(visible.includes('Reference') && visible.includes('Evidence'));
     }
     assert((await body.textContent()).includes('Supporting dating events'));
-    return {counts,actium:actium.id,person,supporting:supporting.id};
+    return {counts,actium:actium.id,person,supporting:supporting.id,selection};
   });
   await test('T-A7',async()=>{
     await page.locator('#close-record').click();await page.locator('#reset').click();
@@ -223,7 +250,35 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
     for (const width of [1280,390]) {
       await page.setViewportSize({width,height:width===390?844:800});
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),width);
-      await checkGuide(page);await shot(page,'map-'+width);
+      await checkGuide(page);
+      if (width===390) {
+        await page.evaluate(()=>window.scrollTo(0,0));
+        const control=page.locator('#map .maplibregl-ctrl-attrib.maplibregl-compact');
+        const button=control.locator('.maplibregl-ctrl-attrib-button');
+        const credits=control.locator('.maplibregl-ctrl-attrib-inner');
+        await button.waitFor();
+        if (await control.evaluate(node=>node.classList.contains('maplibregl-compact-show'))) await button.click();
+        await credits.waitFor({state:'hidden'});
+        const bounds={};
+        for (const state of ['collapsed','expanded']) {
+          if (state==='expanded') {
+            await button.click();
+            await credits.waitFor();
+          }
+          assert.equal(await credits.isVisible(),state==='expanded');
+          assert.equal(await control.evaluate(node=>node.classList.contains('maplibregl-compact-show')),state==='expanded');
+          const map=await page.locator('#map').boundingBox(), b=await button.boundingBox();
+          assert(b.width===44 && b.height===44);
+          const panel=await control.boundingBox();
+          for (const box of [b,panel]) {
+            assert(box.x>=map.x && box.y>=map.y && box.x+box.width<=map.x+map.width && box.y+box.height<=map.y+map.height);
+          }
+          bounds[state]={button:b,panel,map};
+        }
+        await button.click();
+        narrow={attributionBounds:bounds};
+      }
+      await shot(page,'map-'+width);
       if (width===1280) {
         await page.locator('[data-guide=datasets]').click();await shot(page,'dataset-guide');await page.keyboard.press('Escape');
       }
@@ -234,11 +289,11 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
         await page.locator('#close-record').click();
         const warningRow=rows.find(r=>r.render_kind==='economy_karanis_transaction');
         await openRecord(page,warningRow.id);
-        narrow = await page.evaluate(() => ({
+        Object.assign(narrow,await page.evaluate(() => ({
           warning:getComputedStyle(document.querySelector('.record-warnings')).display,
           attributionRepeat:getComputedStyle(document.querySelector('.maplibregl-ctrl-attrib-button')).backgroundRepeat,
           searchHeights:['#search','#search-source','#search-category'].map(s=>document.querySelector(s).getBoundingClientRect().height)
-        }));
+        })));
         assert.equal(narrow.warning,'block'); assert.equal(narrow.attributionRepeat,'no-repeat');
         assert(narrow.searchHeights.every(h=>h>=44));
         await shot(page,'narrow-detail');

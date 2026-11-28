@@ -80,7 +80,10 @@ def build(out):
         source=sources[4+i]
         row,d=add(source,'economy_'+kind,'karanis:archive' if i==3 else 'demo:'+key,'Example '+key,['economy'],
                   ['7','Demo-'+key],categories[i],summary={'Evidence':'Invented example'})
-        if i==3: d.update(archive_source=source,crosswalk={'Basis':'Demonstration association'})
+        if i==3:
+            d.update(archive_source=source,crosswalk={'Basis':'Demonstration association','evidence':[
+                {'source':'Sample inventory','url':'https://example.org/collection','locator':'Entry 63'},
+                {'source':'Printed catalog','url':'urn:example:catalog','locator':'Page 12'}]})
         if i==1: d['tables']={'Amphorae (Wreck ID)':[{'Tag':'Model A'}],'Site objects (objloc = locid)':[{'Tag':'Model B'}]}
     add(sources[6],'economy_raad_observation','demo:observation','Example observation',
         summary={'Test quantity':'2'},category=categories[2])
@@ -111,6 +114,13 @@ def build(out):
                 source_url='https://example.org/history',history_links=[dict(role='associated town',node='demo:town',basis='Test',statement_evidence=[proof])])
         relate(d['id'],'demo:town','event_town' if kind=='history_event' else 'person_biography_town')
         if key=='Q1048':
+            d['dates']=[dict(label='Birth',display='100 BCE',qualifiers=[
+                dict(property='P1480',snaks=[dict(snaktype='value',datavalue={
+                    'type':'wikibase-entityid','value':{'id':'Q5727902'}})]),
+                dict(property='P1319',snaks=[dict(snaktype='value',datavalue={
+                    'type':'time','value':{'time':'+0000-00-00T00:00:00Z','precision':9}})]),
+                dict(property='P2310',snaks=[dict(snaktype='value',datavalue={
+                    'type':'quantity','value':{'amount':'+2','unit':'1'}})])])]
             d['dated_supporting_events']=[dict(event_label='Unmapped sample event',event_qid='Q900002',event_revision=21,
                 role='participant',event_record_id=None,dates=[],association_statement=proof,date_statements={'P585':[proof['Statement']]})]
             relate(d['id'],'wikidata:Q900001','person_event')

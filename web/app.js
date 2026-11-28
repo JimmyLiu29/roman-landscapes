@@ -1,4 +1,4 @@
-import { element } from './details.js';
+import { element, externalLink } from './details.js';
 import { mountFoundation } from './foundation.js';
 import * as maplibregl from './vendor/maplibre-gl/maplibre-gl.mjs';
 import { activeRelease, downloadRelease, fileHash, localFile, readState, recoverDownloads,
@@ -10,6 +10,7 @@ const protocol = new pmtiles.Protocol();
 maplibregl.addProtocol('pmtiles', protocol.tile);
 let map, release, saved, abort, registration, installPrompt;
 let repair=false, mountedReleaseId;
+const damagedNotice = 'The saved offline atlas is damaged.';
 let natural = true, modeChosen = false, hasStoredContent = false, latest, offlineRemoved = false;
 const viewBounds = [[-27, 8], [65, 67]];
 const naturalCredit = '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a>';
@@ -133,9 +134,19 @@ async function render() {
   await new Promise(resolve => map.once('load',resolve));
   mode(natural ? 'natural' : 'simple');
   await mountFoundation(map,release,async name => {
-    const file=await content(name);
-    const stream=file.stream().pipeThrough(new DecompressionStream('gzip'));
-    return new Response(stream).json();
+    if (repair) throw new Error(damagedNotice);
+    try {
+      const file=await content(name);
+      const stream=file.stream().pipeThrough(new DecompressionStream('gzip'));
+      return await new Response(stream).json();
+    } catch (error) {
+      const failedPackage=saved;
+      if (failedPackage && !await activeRelease(true).catch(() => null) && saved===failedPackage) {
+        await showDamagedPackage();
+        throw new Error(damagedNotice, {cause:error});
+      }
+      throw error;
+    }
   },await readState('layers').catch(()=>null),layers=>writeState('layers',layers).catch(()=>{}),
     new Map(sources.sources.map(source=>[source.id,source])),reloadAtlas);
   const ready = () => {
@@ -163,15 +174,6 @@ async function render() {
     $('#credits').append(row);
   }
   $('#reset').onclick = () => map.fitBounds(region, { padding: 16, duration: 0, bearing: 0 });
-}
-
-function externalLink(url, text) {
-  let target;
-  try { target=new URL(url); } catch { return element('span',text); }
-  if (!['http:','https:'].includes(target.protocol)) return element('span',text);
-  const link=element('a',text);
-  link.href=target.href; link.target='_blank'; link.rel='noopener noreferrer';
-  return link;
 }
 
 function size(bytes) {
@@ -255,7 +257,7 @@ async function showDamagedPackage() {
   if (latest) release = latest;
   packageControls();
   $('#download').disabled = !latest;
-  const message = 'The saved offline atlas is damaged. ' + (latest
+  const message = damagedNotice + ' ' + (latest
     ? 'Select Repair offline maps to download it again.'
     : 'Reconnect and reload to repair it, or remove the saved maps.');
   status(message, true);
@@ -271,7 +273,10 @@ async function removed() {
   if (map?.getLayer('relief')) map.removeLayer('relief');
   if (map?.getSource('relief')) map.removeSource('relief');
   $('#download').disabled=true;
-  status('Saved maps removed. Reconnect and reload to use the full atlas.');
+  const message='Saved maps removed. Reconnect and reload to use the full atlas.';
+  $('#map-error').textContent=message;
+  $('#map-error').hidden=Boolean(mountedReleaseId);
+  status(message);
 }
 
 new BroadcastChannel('atlas-storage').onmessage = ({data:message}) => {
@@ -345,6 +350,7 @@ async function start() {
     await render();
     mountedReleaseId = release.id;
   } catch (error) {
+    if (repair) return;
     if (saved) {
       try { await activeRelease(true); }
       catch { await showDamagedPackage(); return; }

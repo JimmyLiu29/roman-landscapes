@@ -231,6 +231,16 @@ async function assertRevisedCatalog(page) {
   assert.equal(await page.locator('#search-results button').count(),0);
 }
 
+async function removeOffline(page, mounted) {
+  const message='Saved maps removed. Reconnect and reload to use the full atlas.';
+  await page.locator('#remove').click();
+  await page.locator('#storage-status').filter({hasText:message}).waitFor();
+  const error=page.locator('#map-error');
+  assert.equal(await error.isVisible(),!mounted);
+  assert.equal(await error.textContent(),message);
+  assert.equal(await page.evaluate(async()=>(await import('/storage.js')).storedContentStatus()),false);
+}
+
 async function repairAndRemove(page) {
   const initial = await savedState(page);
   await openRecord(page,oldRecord);
@@ -266,7 +276,11 @@ async function repairAndRemove(page) {
   }
   assert(await page.locator('#remove').isVisible() && await page.locator('#remove').isEnabled());
   assert(await page.locator('#download').isDisabled());
-  await close(); await serve();
+  await removeOffline(page,false);
+  await serve(); await context.setOffline(false); await page.reload(); await ready(page);
+  await savePack(page);
+  assert.deepEqual(await damageFile(page,'catalog.json.gz'),length);
+  await close();
   page=await launch(profile); await page.goto(origin);
   for (const id of ['#storage-status','#map-error']) {
     await page.locator(id).filter({hasText:/damaged.*Repair offline maps/i}).waitFor();
@@ -276,8 +290,22 @@ async function repairAndRemove(page) {
   assert(await repair.isEnabled());
   await clickAndReload(page,'#download');
   await openRecord(page,oldRecord); assert.equal((await savedState(page)).id,base.id);
-  await close();
-  return {crossVersion:{from:initial.id,to:revised.id,oldRecord,newRecord,oldDirectoryPruned:true},
+  const shard=rows.find(r=>r.id===oldRecord).detail;
+  const shardLength=await damageFile(page,shard);
+  assert.equal(shardLength.before,shardLength.after);
+  await close(); await stop();
+  page=await launch(profile,true); await openAtlas(page);
+  await page.locator('#search').fill(oldRecord);
+  await page.locator('#search-results [data-record="'+oldRecord+'"]').click();
+  await page.locator('#record-content').getByText('The saved offline atlas is damaged.',{exact:true}).waitFor();
+  for (const id of ['#storage-status','#map-error']) {
+    await page.locator(id).filter({hasText:/damaged.*Reconnect/i}).waitFor();
+  }
+  assert(await page.locator('#download').isDisabled());
+  await removeOffline(page,true);
+  await serve(); await context.setOffline(false); await page.reload(); await ready(page);
+  await savePack(page); await close();
+  return {damagedDetail:{shard,...shardLength,offlineRepairNotice:true},offlineRemoval:{mounted:true,unmounted:true},crossVersion:{from:initial.id,to:revised.id,oldRecord,newRecord,oldDirectoryPruned:true},
     coldCatalog:{...length,onlineRepair:true,offlineRemovalAvailable:true}, removal:{empty,downloaded:base.id}};
 }
 
@@ -416,6 +444,20 @@ try {
       const r=rows.filter(r=>r.source===id).at(-1);await openRecord(page,r.id);
     }
     for (const archive of base.archives) {await page.locator('[data-archive="'+archive.id+'"]').click();await page.locator('#more-results').click();}
+    await openRecord(page,'wikidata:Q1048');
+    const reading=page.locator('#record-content');
+    const dates=reading.locator('.record-reading > dl').filter({has:page.getByText('Qualifiers',{exact:true})});
+    assert(await dates.count()>0);
+    const dateText=(await dates.allTextContents()).join(' ');
+    const entity=fixture?'Q5727902':'Q18912752';
+    assert(dateText.includes('P1480 · '+entity));
+    const rawSnak=/"(?:snaks|datavalue)"\s*:/;
+    assert.doesNotMatch(dateText,rawSnak);
+    assert.doesNotMatch(await reading.textContent(),rawSnak);
+    if (fixture) {
+      assert(dateText.includes('P1319 · 0 (source value)'));
+      assert(dateText.includes('P2310 · 2') && !dateText.includes('+2'));
+    }
     await openRecord(page,report.cases['T-A10'].observations.supporting);
     assert(await page.locator('#record-content').getByText('Supporting dating events',{exact:true}).isVisible());
     await page.locator('#close-record').click();await checkGuide(page);
@@ -428,7 +470,7 @@ try {
       assert.equal(await page.locator('#map-error').isVisible(),false);
     }
     await shot(page,'cold-offline');await serve();await context.setOffline(false);
-    return {serverStopped:true,coldProfile:true,bytes:base.bytes,sources:12,archives:3,distantRecord:distant.id};
+    return {serverStopped:true,coldProfile:true,bytes:base.bytes,sources:12,archives:3,distantRecord:distant.id,dateQualifier:entity};
   });
   await test('T-A6',async()=>{
     page=await rollback(page);const fixes=await repairAndRemove(page);

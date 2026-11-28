@@ -5,6 +5,15 @@ export function element(tag,text) {
   if (text!==undefined) node.textContent=String(text);
   return node;
 }
+export function externalLink(url, text) {
+  let target;
+  try { target=new URL(url); } catch { return element('span',text); }
+  if (!['http:','https:'].includes(target.protocol)) return element('span',text);
+  const link=element('a',text);
+  link.href=target.href; link.target='_blank'; link.rel='noopener noreferrer';
+  return link;
+}
+
 function fields(row) {
   const dl=element('dl');
   for (const [k,v] of Object.entries(row)) {
@@ -47,7 +56,7 @@ function renderDates(root, dates=[]) {
   if (!dates.length) return;
   root.append(element('h4','Dates'));
   for (const d of dates) root.append(fields({[d.label]:d.display, Calendar:d.calendar, Basis:d.basis,
-    Sentinel:d.sentinel, Qualifiers:d.qualifiers?.length ? d.qualifiers : null}));
+    Sentinel:d.sentinel, Qualifiers:d.qualifiers?.map(q => q.property+' · '+(q.snaks || []).map(formatSnak).join(', ')).join('; ')}));
 }
 
 function tableRows(root, tables={}) {
@@ -68,11 +77,12 @@ function formatSnak(snak) {
     const parts = /^([+-])(\d+)-(\d{2})-(\d{2})T/.exec(value.time);
     if (!parts) return value.time;
     const [, sign, y, month, day] = parts;
+    if (Number(y) === 0) return year(0);
     const date = [Number(y), ...(value.precision >= 10 ? [month] : []),
       ...(value.precision >= 11 ? [day] : [])].join('-');
     return date + (sign === '-' ? ' BCE' : ' CE') + (value.precision < 9 ? ' (precision '+value.precision+')' : '');
   }
-  case 'quantity': return [value.amount, value.unit === '1' ? '' : value.unit?.split('/').pop()].filter(Boolean).join(' ');
+  case 'quantity': return [String(value.amount).replace(/^\+/, ''), value.unit === '1' ? '' : value.unit?.split('/').pop()].filter(Boolean).join(' ');
   case 'monolingualtext': return value.text + ' (' + value.language + ')';
   case 'string': return value;
   default: return value == null ? 'unknown value' : JSON.stringify(value);
@@ -139,7 +149,7 @@ const relationLabels={
 function renderRelations(root,neighbors,select) {
   const grouped=Map.groupBy(neighbors,item=>relationLabels[item.group][Number(item.reverse)]);
   for (const [title,items] of grouped) {
-    const group=disclosure(title+' ('+items.length+' links)');
+    const group=disclosure(title+' ('+items.length+(items.length===1 ? ' link)' : ' links)'));
     let offset=0;
     const more=button('Show 25 more',append);
     function append() {
@@ -272,8 +282,23 @@ export function renderDetail(record,d,neighbors,select,focusRow,sourcesById,brow
     root.append(fields(d.summary)); tableRows(root,d.tables);
     if (d.normalized_fields) {const block=disclosure('Normalized source fields'); block.append(fields(d.normalized_fields)); root.append(block);}
     break;
-  case 'economy_karanis_archive':
-    root.append(fields(d.crosswalk),button('Browse '+archives.find(a=>a.id===d.archive_source).record_count.toLocaleString('en-US')+' transactions',()=>browse(d.archive_source))); break;
+  case 'economy_karanis_archive': {
+    const {evidence = [], ...crosswalk} = d.crosswalk;
+    root.append(fields(crosswalk));
+    if (evidence.length) {
+      const list=element('ul');
+      list.setAttribute('aria-label','Crosswalk evidence');
+      for (const {source,url,locator} of evidence) {
+        const item=element('li');
+        item.append(externalLink(url,source));
+        if (locator) item.append(' · '+locator);
+        list.append(item);
+      }
+      root.append(list);
+    }
+    root.append(button('Browse '+archives.find(a=>a.id===d.archive_source).record_count.toLocaleString('en-US')+' transactions',()=>browse(d.archive_source)));
+    break;
+  }
   case 'source_note': case 'economy_document_place': case 'economy_raad_type':
     for (const row of Array.isArray(d.native)?d.native:[d.native]) root.append(fields(row));
     if (d.summary) root.append(fields(d.summary));

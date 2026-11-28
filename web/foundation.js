@@ -128,10 +128,11 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   map.addSource('selected-record',{type:'geojson',data:empty});
   map.addLayer({id:'selected-point',source:'selected-record',type:'circle',
     filter:['in',['geometry-type'],['literal',['Point','MultiPoint']]],
-    paint:{'circle-radius':6,'circle-color':'#bf552a','circle-stroke-color':'#fff','circle-stroke-width':1}});
-  map.addLayer({id:'selected-line',source:'selected-record',type:'line',
-    filter:['in',['geometry-type'],['literal',['LineString','MultiLineString']]],
-    paint:{'line-width':4,'line-color':'#bf552a'}});
+    paint:{'circle-radius':7,'circle-color':'#f0e442','circle-stroke-color':'#111111','circle-stroke-width':2}});
+  const selectedLine={source:'selected-record',type:'line',
+    filter:['in',['geometry-type'],['literal',['LineString','MultiLineString']]]};
+  map.addLayer({...selectedLine,id:'selected-line-casing',paint:{'line-width':6,'line-color':'#111111'}});
+  map.addLayer({...selectedLine,id:'selected-line',paint:{'line-width':3,'line-color':'#f0e442'}});
   const controls=new Map(), applied=new Map();
   function refresh() {
     for (const group of groups) {
