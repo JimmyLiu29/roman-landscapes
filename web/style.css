@@ -108,3 +108,25 @@ output { font: 12px ui-monospace, monospace; color: #435a5b; }
   #close-record { position:sticky; top:0; background:var(--paper); z-index:1; }
   .record-reading { margin:0; }
 }
+
+.key-people-biography { background: #7b4193; border-radius: 50%; }
+.key-people { background: #007c82; border-radius: 50%; }
+.key-events { background: #c43544; border-radius: 50%; }
+.key-economic-0 { background: #805023; border-radius: 50%; }
+.key-economic-1 { background: #1266a2; border-radius: 50%; }
+.key-economic-2 { background: #b34155; border-radius: 50%; }
+.key-economic-3 { background: #5b4392; border-radius: 50%; }
+.key-economic-4 { background: #497528; border-radius: 50%; }
+
+#archives { display: grid; gap: .35rem; }
+#collection-notices p, .record-warnings { border-left: 3px solid #99652f; padding: .5rem .75rem; background: #faf2df; }
+.record-reading details { overflow-wrap: anywhere; }
+@media (max-width:740px) {
+  button, select, input[type=search], summary, .layer-control label, .guide-text nav a { min-height:44px; }
+  #record-content, .record-reading dl, .record-reading dd { min-width:0; overflow-wrap:anywhere; }
+}
+@media (max-width:740px) {
+  #map .maplibregl-ctrl-group button, #map .maplibregl-ctrl-attrib-button { width:44px; height:44px; }
+  .layer-control select, .layer-control label, #guide-dialog nav a { min-height:44px; }
+  .layer-control label, #guide-dialog nav a { display:flex; align-items:center; }
+}

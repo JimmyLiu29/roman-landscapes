@@ -62,7 +62,7 @@ def acquire(scope, *, root=ROOT, download=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--scope', choices=('foundation', 'all'), default='foundation')
+    parser.add_argument('--scope', choices=('foundation', 'all'), default='all')
     try:
         result = acquire(parser.parse_args(argv).scope, download=True)
     except ValueError as exc:

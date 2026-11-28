@@ -1,24 +1,20 @@
 """Bounded acquisition, deterministic physical-map build and local static serving."""
 from pathlib import Path
 import hashlib
-from collections import Counter, defaultdict
 import io
 import json
 import math
 import shutil
 import sys
 import tempfile
-import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
-from foundation import BOUNDS, SOURCES, build_foundation, roma_distance_km
+from foundation import BOUNDS
 
-RAW = ROOT / 'data/raw'
 WEB = ROOT / 'web'
 DIST = ROOT / 'dist'
-MANIFEST = ROOT / 'data/source-manifest.json'
 VIEW_BOUNDS = [-27, 8, 65, 67]
 
 def digest(path):
@@ -149,19 +145,18 @@ def relief_tiles(out, manifest):
 
 
 
-SCOPE = ['simple-base', 'natural-base', 'source-credits', *SOURCES]
 VECTORS = {'land': {'Polygon', 'MultiPolygon'}, 'rivers': {'LineString', 'MultiLineString'},
            'lakes': {'Polygon', 'MultiPolygon'}, 'ocean': {'Polygon', 'MultiPolygon'}, 'coast': {'LineString', 'MultiLineString'}}
-PACK = {f'{layer}.geojson' for layer in VECTORS} | {'relief.pmtiles', 'sources.json'}
-FOUNDATION_FILES = {'catalog.json.gz','relations.json.gz'} | {f'{k}.geojson.gz' for k in ('settlements','roads','ports','maritime')}
-SHELL = {'layers.js', 'guide.js', 'foundation.js', 'search.js', 'details.js', '_headers', 'app.js', 'style.css', 'storage.js', 'index.html', 'sw.js', 'manifest.webmanifest',
-         'icon-192.png', 'icon-512.png'}
 
 
-def input_files(manifest):
-    for source in manifest["sources"]:
-        yield source
-        yield from source.get("assets", [])
+def shell_sources():
+    vendors = json.loads((ROOT / 'data/vendor-lock.json').read_bytes())
+    for name, expected in vendors.items():
+        assert digest(WEB / name) == expected, name
+    names = json.loads((ROOT / 'data/shell-manifest.json').read_bytes())
+    assert set(names) == {p.name for p in WEB.iterdir() if p.is_file()}
+    return {**{name: WEB / name for name in [*names, *vendors]},
+            'vendor-lock.json': ROOT / 'data/vendor-lock.json'}
 
 
 def acquire():
@@ -169,124 +164,76 @@ def acquire():
     acquire_inputs(sys.argv[2:] if __name__ == "__main__" else [])
 
 
-def check_inputs():
-    manifest = json.loads(MANIFEST.read_bytes())
-    required = {
-        'natural-earth-' + name for name in ['relief', 'land', 'rivers', 'lakes']} | set(SOURCES)
-    assert required <= {r['id'] for r in manifest['sources']}
-    manifest['sources'] = [r for r in manifest['sources'] if r['id'] in required]
-    for record in input_files(manifest):
-        assert digest(ROOT / record['path']) == record['sha256'], record['path']
-    vendors = json.loads((ROOT / 'data/vendor-lock.json').read_bytes())
-    for name, expected in vendors.items():
-        assert digest(WEB / name) == expected, name
-    return manifest, SHELL | set(vendors)
+def worker_text(directory, sources):
+    names = sorted(set(sources) | {'release.json'})
+    hashes = [digest(sources['sw.js'] if name == 'sw.js' else directory / name) for name in names]
+    version = hashlib.sha256(''.join(hashes).encode()).hexdigest()[:16]
+    cached = ['/' + name for name in names if name not in ('sw.js', '_headers')]
+    return sources['sw.js'].read_text().replace('__SHELL_VERSION__', version).replace('__SHELL_FILES__', json.dumps(cached))
 
 
 def build():
-    manifest, shell = check_inputs()
-    DIST.mkdir(exist_ok=True)
-    # Recreate the dedicated output directory so stale releases cannot be deployed.
-    shutil.rmtree(DIST)
-    for name in sorted(shell):
-        (DIST / name).parent.mkdir(exist_ok=True, parents=True)
-        shutil.copyfile(WEB / name, DIST / name)
-    stage = DIST / 'packs/stage'
-    stage.mkdir(parents=True)
-    physical_vectors(stage, manifest)
-    relief_tiles(stage, manifest)
-    build_foundation(stage, manifest)
-    write_json(stage / 'sources.json', {'sources': [
-        {k: v for k, v in record.items() if k != 'path'} for record in manifest['sources']]})
-    hashes = {p.name: digest(p) for p in sorted(stage.iterdir())}
-    version = 'foundation-' + hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()[:16]
-    dest = stage.rename(stage.with_name(version))
-    files = [{'path': f'packs/{version}/{name}', 'bytes': (dest / name).stat().st_size,
-              'sha256': value, 'kind': 'archive' if name.endswith('.pmtiles') else 'gzip-json' if name.endswith('.gz') else 'json'}
-             for name, value in hashes.items()]
-    write_json(DIST / 'release.json', {'schema': 1, 'app_schema': 1, 'scope': SCOPE, 'id': version,
-               'datasets': [{'id':r['id'], 'label':r['label']} for r in manifest['sources'] if r['id'] in SOURCES],
-               'bounds': BOUNDS, 'tile_zoom': [0, 6], 'view_bounds': VIEW_BOUNDS, 'view_zoom': [1, 7],
-               'files': files, 'bytes': sum(f['bytes'] for f in files)})
-    cached = sorted((shell | {'release.json'}) - {'sw.js', '_headers'})
-    # Response rules can change the bytes previously cached by browsers.
-    versioned = sorted(shell | {'release.json'})
-    identity = hashlib.sha256(''.join(digest(DIST / p) for p in versioned).encode()).hexdigest()[:16]
-    worker = (WEB / 'sw.js').read_text(encoding='utf-8').replace('__SHELL_VERSION__', identity)
-    (DIST / 'sw.js').write_text(worker.replace('__SHELL_FILES__', json.dumps(['/' + p for p in cached])), encoding='utf-8')
-    verify()
+    from inputs import acquire as locked_inputs
+    from preprocess import build_pack
+
+    sources = shell_sources()
+    cache = ROOT / '.cache'
+    cache.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=cache) as temp:
+        candidate = Path(temp) / 'dist'
+        build_pack(candidate, locked_inputs('all'))
+        for name, source in sources.items():
+            target = candidate / name
+            target.parent.mkdir(exist_ok=True, parents=True)
+            shutil.copyfile(source, target)
+        (candidate / 'sw.js').write_text(worker_text(candidate, sources))
+        verify(candidate)
+        previous = Path(temp) / 'previous'
+        if DIST.exists():
+            DIST.rename(previous)
+        try:
+            candidate.rename(DIST)
+        except OSError:
+            if previous.exists():
+                previous.rename(DIST)
+            raise
 
 
-def verify():
+def verify(directory=DIST):
+    from atlas.model import ARCHIVES
+    from atlas.fields import warnings
+    from atlas.validate import verify_pack
     from pmtiles.reader import Reader
     from pmtiles.tile import TileType
     from shapely.geometry import box, shape
     from PIL import Image
+    from render_docs import check
 
-    manifest, shell = check_inputs()
-    release = json.loads((DIST / 'release.json').read_bytes())
-    assert release['scope'] == SCOPE and release['bounds'] == BOUNDS
-    assert release['tile_zoom'] == [0, 6] and release['view_zoom'] == [1, 7] and release['view_bounds'] == VIEW_BOUNDS
-    prefix = 'packs/' + release['id'] + '/'
-    import gzip
-    pack = DIST / prefix
-    with gzip.open(pack / 'catalog.json.gz','rt') as file:
-        catalog = json.load(file)['records']
-    assert len(catalog) == len({r['id'] for r in catalog}) == 49711
-    counts_by_source = Counter(r['source'] for r in catalog)
-    assert counts_by_source == dict(zip(SOURCES, (1390, 14771, 885, 32665))), counts_by_source
-    ids = {r['id'] for r in catalog}
-    expected_ids = defaultdict(set)
-    for row in catalog:
-        expected_ids[row['detail']].add(row['id'])
-    shards = set(expected_ids)
-    def unpack(name):
-        return json.loads(gzip.decompress((pack / name).read_bytes()))
-    regional_names = 0
-    for name, keys in expected_ids.items():
-        entries = unpack(name)
-        assert set(entries) == keys and all(detail['id'] == key for key, detail in entries.items()), name
-        regional_names += sum(len(d.get('names', [])) for d in entries.values())
-    assert regional_names == 29150
-    nodes = [r for r in catalog if r['id'].startswith('orbis:place:')]
-    assert len(nodes) == 301 and sum(r.get('layer') == 'ports' and 'bbox' in r for r in nodes) == 294
-    assert sum('layer' not in r and 'bbox' not in r for r in nodes) == 7
-    study = box(*BOUNDS)
-    nearest_display = math.inf
-    for layer, size in [('roads',14769), ('ports',294), ('maritime',584), ('settlements',1388)]:
-        fc = unpack(layer+'.geojson.gz')
-        assert fc['type'] == 'FeatureCollection' and len(fc['features']) == size
-        layer_ids = {r['id'] for r in catalog if r.get('layer') == layer}
-        assert {f['properties']['id'] for f in fc['features']} == layer_ids
-        kinds = {'Point'} if layer in ('ports', 'settlements') else {'LineString', 'MultiLineString'}
-        for feature in fc['features']:
-            geometry = feature['geometry']
-            geom = shape(geometry)
-            assert feature['type'] == 'Feature' and geom.geom_type in kinds and geom.is_valid and not geom.is_empty
-            assert study.covers(geom), feature['properties']['id']
-            if layer == 'roads' and feature['properties']['certainty'] == 'Certain':
-                coords = geometry['coordinates']
-                lines = [coords] if geometry['type'] == 'LineString' else coords
-                nearest_display = min(nearest_display, roma_distance_km(lines))
-    assert nearest_display < 2, f'Exported roads are {nearest_display:.3f} km from Roma'
-    edges = unpack('relations.json.gz')
-    assert len(edges) == 1168 and all(e['from'] in ids and e['to'] in ids for e in edges)
-    credits = {r['id']: r for r in json.loads((pack / 'sources.json').read_bytes())['sources']}
-    assert credits['itinere']['accounting']['roma_vertex_km'] < 2
-    package_files = PACK | FOUNDATION_FILES | shards
-    expected = shell | {'release.json'} | {prefix + name for name in package_files}
-    paths = {str(p.relative_to(DIST)): p for p in DIST.rglob('*') if p.is_file()}
+    release = json.loads((directory / 'release.json').read_bytes())
+    assert release['bounds'] == BOUNDS and release['view_bounds'] == VIEW_BOUNDS
+    assert release['tile_zoom'] == [0, 6] and release['view_zoom'] == [1, 7]
+    assert release['scope'] == ['simple-base','natural-base','source-credits', *(d['id'] for d in release['datasets'])]
+    archives = release['archives']
+    assert len(archives) == len(ARCHIVES) and {a['id'] for a in archives} == set(ARCHIVES)
+    for archive in archives:
+        source = archive['id']
+        _, count, notice = ARCHIVES[source]
+        assert archive['record_count'] == count and archive['member_browse_mode'] == 'archive'
+        assert archive['anchor_id'] == ('karanis:archive' if source == 'oxford-karanis' else None)
+        assert archive['collection_notices'] == warnings([notice])
+    receipt = verify_pack(directory)
+    sources = shell_sources()
+    expected = set(sources) | {'release.json'} | {f['path'] for f in release['files']}
+    paths = {p.relative_to(directory).as_posix():p for p in directory.rglob('*') if p.is_file()}
     assert set(paths) == expected and len(paths) <= 20000
-    assert max(p.stat().st_size for p in paths.values()) <= 25 * 1024 ** 2
-    assert len(release['files']) == len(package_files)
-    assert {f['path'] for f in release['files']} == {prefix + name for name in package_files}
-    assert release['bytes'] == sum(f['bytes'] for f in release['files'])
-    for item in release['files']:
-        path = paths[item['path']]
-        assert path.stat().st_size == item['bytes'] and digest(path) == item['sha256']
-    for path in shell - {'sw.js'}:
-        assert digest(DIST / path) == digest(WEB / path)
-    pack = DIST / prefix
+    assert max(p.stat().st_size for p in paths.values()) <= 25 * 1024**2
+    for name, source in sources.items():
+        if name != 'sw.js':
+            assert digest(directory / name) == digest(source), name
+    assert (directory / 'sw.js').read_text() == worker_text(directory, sources)
+    pack = directory / 'packs' / release['id']
+    manifest = json.loads((pack / 'sources.json').read_bytes())
+    check(directory)
     clip = box(*VIEW_BOUNDS)
     counts = {}
     for name, kinds in VECTORS.items():
@@ -319,10 +266,8 @@ def verify():
                     image.load()
                 count += 1
     assert count == header['addressed_tiles_count'] == 394
-    print(json.dumps({'release': release['id'], 'tiles': count, 'features': counts,
-                      'catalog': dict(counts_by_source), 'shards': len(shards), 'relations': len(edges),
-                      'regional_names': regional_names, 'ports': [294, 7], 'display_roma_vertex_km': nearest_display, 'roma_vertex_km': credits['itinere']['accounting']['roma_vertex_km'],
-                      'static_files': len(paths), 'static_bytes': sum(p.stat().st_size for p in paths.values())}))
+    print(json.dumps(dict(receipt, tiles=count, physical=counts, static_files=len(paths),
+                          static_bytes=sum(p.stat().st_size for p in paths.values()), documents='verified')))
 
 
 def serve():
@@ -343,10 +288,12 @@ def serve():
     class Handler(SimpleHTTPRequestHandler):
         def end_headers(self):
             path = urlsplit(self.path).path
-            for pattern, headers in rules.items():
-                if fnmatchcase(path, pattern):
-                    for key, value in headers.items():
-                        self.send_header(key, value)
+            overrides = {key: value for pattern, headers in rules.items() if fnmatchcase(path, pattern)
+                         for key, value in headers.items()}
+            for key, value in overrides.items():
+                prefix = (key + ':').lower().encode()
+                self._headers_buffer[:] = [line for line in self._headers_buffer if not line.lower().startswith(prefix)]
+                self.send_header(key, value)
             super().end_headers()
 
     parser = argparse.ArgumentParser()

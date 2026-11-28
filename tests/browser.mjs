@@ -1,1044 +1,351 @@
-import { createHash } from 'node:crypto';
-import { gzipSync, gunzipSync } from 'node:zlib';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {createServer} from 'node:http';
+import {mkdir,mkdtemp,readFile,readdir,rm,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {fileURLToPath} from 'node:url';
+import {gzipSync,gunzipSync} from 'node:zlib';
+import {siteCases,ready,openRecord,checkGuide} from './browser-site.mjs';
 
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const dist = fileURLToPath(new URL('../dist/', import.meta.url));
-const types = { '.mjs': 'text/javascript', '.js': 'text/javascript', '.html': 'text/html',
-  '.json': 'application/json', '.css': 'text/css', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
-const profile = await mkdtemp(path.join(tmpdir(), 'roman-landscapes-'));
-const publicURL = process.argv[2];
-let origin = publicURL;
-let server, context;
-const errors = new Set(), external = new Set();
-
-// Serve the actual static response policy, with controlled future releases for lifecycle tests.
-const rules=[];
-let update, override, base, oldPort, missingDetail;
-const shellFixtures = new Map();
-function headers(pathname) {
-  const result={};
-  for (const {pattern,values} of rules) {
-    if (pattern===pathname || (pattern.endsWith('*') && pathname.startsWith(pattern.slice(0,-1)))) Object.assign(result,values);
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const root=fileURLToPath(new URL('../',import.meta.url));
+const fixture=process.argv.includes('--fixture');
+const evidence=path.resolve(process.env.ATLAS_EVIDENCE || path.join(root,'.cache/browser-evidence'));
+const mode=fixture?'fixture':'full';
+await mkdir(evidence,{recursive:true});
+const work=await mkdtemp(path.join(evidence,'.'+mode+'-'));
+const profile=path.join(work,'profile');
+const dist=fixture?path.join(work,'miniature'):path.join(root,'dist');
+async function hashes(dir,prefix='') {
+  const out={};
+  for (const item of await readdir(path.join(dir,prefix),{withFileTypes:true})) {
+    const name=path.join(prefix,item.name);
+    if (item.isDirectory()) Object.assign(out,await hashes(dir,name));
+    else out[name]=createHash('sha256').update(await readFile(path.join(dir,name))).digest('hex');
   }
-  return result;
+  return out;
+}
+const makeFixture=dir=>execFileSync(process.env.ATLAS_PYTHON || 'python3',['-B',path.join(root,'tests/fixture.py'),dir]);
+if (fixture) makeFixture(dist);
+const base=JSON.parse(await readFile(path.join(dist,'release.json')));
+const pack=path.join(dist,'packs',base.id);
+const readPack=async name=>JSON.parse(gunzipSync(await readFile(path.join(pack,name))));
+const {records:rows}=await readPack('catalog.json.gz');
+const edges=await readPack('relations.json.gz');
+const shardCache=new Map();
+async function detail(row) {
+  if (!shardCache.has(row.detail)) {
+    if (shardCache.size>=4) shardCache.delete(shardCache.keys().next().value);
+    shardCache.set(row.detail,await readPack(row.detail));
+  }
+  return shardCache.get(row.detail)[row.id];
+}
+const report={mode,release:base.id,bytes:base.bytes,cases:{},screenshots:[],pageErrors:[],consoleErrors:[],csp:[],thirdParty:[],expectedFaults:[]};
+const reportFile=path.join(evidence,mode+'-report.json');
+const save=()=>writeFile(reportFile,JSON.stringify(report,null,2)+'\n');
+async function test(id,operation) {
+  console.log(id,mode);
+  try {report.cases[id]={status:'pass',observations:await operation()};}
+  catch (e) {report.cases[id]={status:'fail',error:e.message};throw e;}
+  finally {await save();}
+}
+async function shot(page,label) {
+  const name=mode+'-'+label+'.png';await page.screenshot({path:path.join(evidence,name)});
+  report.screenshots.push(name);
+}
+const types={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.json':'application/json',
+  '.css':'text/css','.webmanifest':'application/manifest+json','.png':'image/png'};
+let server,port,origin,serving=dist,context,update,override,missing,slowShell=false,shellSuffix='',oldRequests=0;
+const rules=[];
+for (const line of (await readFile(path.join(dist,'_headers'),'utf8')).split('\n')) {
+  if (line.startsWith('/')) rules.push({pattern:new RegExp('^'+line.trim().split('*').map(s=>s.replace(/[.]/g,'\\.')).join('.*')+'$'),values:{}});
+  else if (line.trim()) {
+    const i=line.indexOf(':');rules.at(-1).values[line.slice(0,i).trim().toLowerCase()]=line.slice(i+1).trim();
+  }
 }
 async function serve() {
-  if (!rules.length) {
-    for (const line of (await readFile(path.join(dist,'_headers'),'utf8')).split('\n')) {
-      if (line.startsWith('/')) rules.push({pattern:line.trim(),values:{}});
-      else if (line.trim()) {
-        const i=line.indexOf(':');rules.at(-1).values[line.slice(0,i).trim()]=line.slice(i+1).trim();
-      }
-    }
-    base=JSON.parse(await readFile(path.join(dist,'release.json')));
-  }
-  server = createServer(async (req, res) => {
-    const url=new URL(req.url,'http://localhost'), pathname=url.pathname;
-    let relative=pathname==='/'?'/index.html':pathname;
-    if (update && relative.startsWith('/packs/'+update.id+'/')) relative=relative.replace(update.id,base.id);
-    const file = path.resolve(dist, '.' + relative);
-    if (!file.startsWith(dist) || pathname===missingDetail) { res.writeHead(404).end(); return; }
+  server=createServer(async(req,res)=>{
+    const pathname=new URL(req.url,'http://localhost').pathname;
+    let rel=pathname==='/'?'index.html':pathname.slice(1);
+    if (update && rel.startsWith('packs/'+update.id+'/')) rel=rel.replace(update.id,base.id);
+    const file=path.resolve(serving,rel);
+    if (!file.startsWith(serving+path.sep) || pathname===missing) {if (pathname===missing) oldRequests++;res.writeHead(404).end();return;}
     try {
-      let data;
-      if (shellFixtures.has(pathname)) data=await shellFixtures.get(pathname);
-      else if (update && pathname==='/release.json') data=JSON.stringify(update);
-      else if (override && pathname===override.path) data=override.bytes;
-      else data=await readFile(file);
-      res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', ...headers(pathname) }).end(data);
-    } catch { res.writeHead(404).end(); }
+      let bytes=await readFile(file);
+      if (pathname==='/release.json' && update) bytes=JSON.stringify(update);
+      if (pathname===override?.path) bytes=override.bytes;
+      if (pathname==='/sw.js' && shellSuffix) bytes=bytes.toString().replace(/atlas-shell-([a-f0-9]{16})/,'atlas-shell-$1'+shellSuffix);
+      if (slowShell && pathname==='/style.css') await new Promise(resolve=>setTimeout(resolve,900));
+      const headers={'content-type':types[path.extname(file)] || 'application/octet-stream'};
+      for (const rule of rules) if (rule.pattern.test(pathname)) Object.assign(headers,rule.values);
+      res.writeHead(200,headers).end(bytes);
+    } catch {res.writeHead(404).end();}
   });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(oldPort || 0, '127.0.0.1', resolve); });
-  oldPort=server.address().port;
-  origin = 'http://127.0.0.1:' + oldPort;
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port || 0,'127.0.0.1',resolve);});
+  port=server.address().port;origin='http://127.0.0.1:'+port;
 }
-
-async function launch(width, offline = false) {
-  console.error('Chromium startup',width,offline?'offline':'online');
-  context = await chromium.launchPersistentContext(profile, {
-    headless: true, executablePath: process.env.CHROMIUM_PATH || undefined,
-    viewport: { width, height: width === 390 ? 844 : 880 },
-    args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
-  });
-  await context.setOffline(offline);
-  context.on('request', req => {
-    if (/^https?:/.test(req.url()) && new URL(req.url()).origin !== new URL(origin).origin) external.add(req.url());
-  });
-  if (offline) {
-    proof.offlinePackRequests=0;
-    context.on('request',req=>{
-      if (!proof.offlineColdBoot && new URL(req.url()).pathname.startsWith('/packs/')) proof.offlinePackRequests++;
+async function stop() {
+  if (server) {const closed=new Promise(resolve=>server.close(resolve));server.closeAllConnections();await closed;server=null;}
+}
+async function launch(dir=profile,offline=false,headed=false) {
+  context=await chromium.launchPersistentContext(dir,{headless:!headed,executablePath:process.env.CHROMIUM_PATH || chromium.executablePath(),
+    viewport:headed ? null : {width:1280,height:800},args:[...(headed && offline ? ['--proxy-server=http://127.0.0.1:'+port,'--proxy-bypass-list=<-loopback>'] : []),'--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+  report.chromium=context.browser().version();assert.match(report.chromium,/^151\./);console.log('Chromium '+report.chromium);
+  context.setDefaultTimeout(15000);await context.setOffline(offline);
+  context.on('request',r=>{if (/^https?:/.test(r.url()) && new URL(r.url()).origin!==origin) report.thirdParty.push(r.url());});
+  await context.exposeBinding('reportPolicy',(_,directive)=>report.csp.push(directive));
+  await context.addInitScript(()=>addEventListener('securitypolicyviolation',e=>window.reportPolicy(e.effectiveDirective)));
+  function watch(page) {
+    page.on('pageerror',e=>report.pageErrors.push(e.message));
+    page.on('console',m=>{
+      if (m.type()!=='error') return;
+      const url=m.location().url;
+      if (url.endsWith('/release.json?check=1') && /ERR_(INTERNET_DISCONNECTED|CONNECTION_REFUSED|PROXY_CONNECTION_FAILED|FAILED)/.test(m.text()) ||
+          (missing && url.endsWith(missing) && /404/.test(m.text()))) report.expectedFaults.push(m.text());
+      else report.consoleErrors.push({text:m.text(),url});
     });
   }
-  const page = context.pages()[0];
-  page.setDefaultTimeout(30000);
-  page.on('pageerror', e => {errors.add(e.message);console.error(e.message);});
-  page.on('console', m => {
-    if (m.type() !== 'error') return;
-    // Chromium reports the expected network-only update probe when the server is stopped.
-    if (m.location().url.endsWith('/release.json?check=1') && /net::ERR_(INTERNET_DISCONNECTED|CONNECTION_REFUSED|FAILED)/.test(m.text())) return;
-    errors.add(m.text());
+  for (const p of context.pages()) watch(p);context.on('page',watch);
+  return context.pages()[0];
+}
+async function close() {await context?.close();context=null;}
+async function openAtlas(page) {await page.goto(origin);await ready(page);}
+async function savePack(page) {
+  await page.locator('#download').click();
+  await page.locator('#storage-status').filter({hasText:'verified and ready offline'}).waitFor({timeout:180000});
+}
+async function savedState(page) {
+  return page.evaluate(async()=>{
+    const s=await import('/storage.js');const active=await s.activeRelease(true);
+    const dirs=[];const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('atlas-packages');
+    for await (const name of root.keys()) dirs.push(name);
+    return {id:active.id,dir:active.storageDirectory,dirs,completed:await s.readState('completed'),transfer:await s.readState('transfer')};
   });
-  if (!offline && !publicURL) {
-    // Select Simple after WebGL initialization and before the first style load.
-    await page.addInitScript(() => {
-      if (sessionStorage.getItem('early-mode-tested')) return;
-      sessionStorage.setItem('early-mode-tested','1');
-      const get=HTMLCanvasElement.prototype.getContext;
-      HTMLCanvasElement.prototype.getContext=function(...args) {
-        const result=get.apply(this,args);
-        if (result && args[0]==='webgl2' && document.querySelector('#map')?.contains(this)) {
-          queueMicrotask(()=>document.querySelector('input[value=simple]').click());
-          HTMLCanvasElement.prototype.getContext=get;
-        }
-        return result;
-      };
-    });
+}
+async function prepareUpdate(fault) {
+  update=structuredClone(base);update.id='atlas-test-'+fault;
+  for (const f of update.files) f.path=f.path.replace(base.id,update.id);
+  override=null;
+  if (!['corrupt','gzip','closure'].includes(fault)) return;
+  const file=update.files.find(f=>f.path.endsWith(fault==='closure'?'/catalog.json.gz':'/details-hanson-cities-000.json.gz'));
+  let bytes=Buffer.from(await readFile(path.join(dist,file.path.replace(update.id,base.id))));
+  if (fault==='closure') {const c=JSON.parse(gunzipSync(bytes));c.records[0].detail='missing.json.gz';bytes=gzipSync(JSON.stringify(c));}
+  else bytes[0]^=255;
+  if (fault!=='corrupt') {file.sha256=createHash('sha256').update(bytes).digest('hex');update.bytes+=bytes.length-file.bytes;file.bytes=bytes.length;}
+  override={path:'/'+file.path,bytes};
+}
+async function rollback(page) {
+  const initial=await savedState(page);
+  update={...base,app_schema:99};
+  const incompatible=await page.evaluate(async()=>{
+    const s=await import('/storage.js');const manifest=await (await fetch('/release.json?check=1')).json();
+    try {await s.downloadRelease(manifest);return false;} catch(e){return /compatible/.test(e.message);}
+  });
+  assert(incompatible);update=null;
+  for (const [fault,message] of [['cancel','Download cancelled'],['quota','Not enough browser storage'],
+    ['corrupt','Content checksum failed'],['gzip','Invalid compressed package'],['closure','missing detail shard']]) {
+    await prepareUpdate(fault);await page.reload();await ready(page);
+    if (fault==='quota') await page.evaluate(()=>navigator.storage.estimate=async()=>({usage:0,quota:1}));
+    await page.locator('#update-maps').click();
+    if (fault==='cancel') {await page.waitForFunction(()=>!document.querySelector('#cancel').hidden);await page.locator('#cancel').click();}
+    await page.locator('#storage-status').filter({hasText:message}).waitFor({timeout:180000});
+    assert.deepEqual(await savedState(page),initial);
   }
-  await page.goto(origin);
-  await page.locator('#map[data-ready=true]').waitFor({ timeout: 60000 });
-  assert.equal(await page.locator('#map-error').isVisible(), false);
+  update=null;override=null;await close();await stop();
+  page=await launch(profile,true);await openAtlas(page);
+  await openRecord(page,rows.find(r=>r.layers.includes('roads')).id);await page.locator('[value=simple]').check();
+  await page.locator('[value=natural]').check();assert.deepEqual(await savedState(page),initial);
+  await shot(page,'rollback-offline');
+  await serve();await context.setOffline(false);await page.reload();await ready(page);
+  for (const damage of ['flip','missing']) {
+    const old=await savedState(page);
+    await page.evaluate(async damage=>{
+      const s=await import('/storage.js'),a=await s.readState('active');
+      const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('atlas-packages');
+      const dir=await root.getDirectoryHandle(a.storageDirectory);
+      const f=a.files.find(f=>f.path.includes('/details-'));
+      if (damage==='missing') {await dir.removeEntry(f.sha256);return;}
+      const h=await dir.getFileHandle(f.sha256),bytes=new Uint8Array(await (await h.getFile()).arrayBuffer());bytes[0]^=1;
+      const writer=await h.createWritable();await writer.write(bytes);await writer.close();
+    },damage);
+    await page.locator('#download').click();
+    await page.getByRole('button',{name:'Repair offline maps'}).waitFor();
+    if (damage==='flip') {
+      await page.locator('#download').click();await page.locator('#cancel').click();
+      await page.locator('#storage-status').filter({hasText:'Download cancelled'}).waitFor();
+      await page.evaluate(()=>{window.actualEstimate=navigator.storage.estimate.bind(navigator.storage);navigator.storage.estimate=async()=>({quota:1,usage:0});});
+      await page.locator('#download').click();await page.locator('#storage-status').filter({hasText:'Not enough browser storage'}).waitFor();
+      assert.equal(await page.evaluate(async()=>(await (await import('/storage.js')).readState('active')).storageDirectory),old.dir);
+      await page.evaluate(()=>navigator.storage.estimate=window.actualEstimate);
+    }
+    await savePack(page);const repaired=await savedState(page);assert.notEqual(repaired.dir,old.dir);assert.equal(repaired.id,old.id);
+  }
   return page;
 }
 
-async function layout(page, width) {
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
-  assert.equal(await page.locator('h1').innerText(), 'Roman Landscapes');
-  await page.locator('#foundation-controls').waitFor();
-  assert.equal(await page.locator('[data-layer]').count(),3);
-  assert.equal(await page.locator('[data-tier]').count(),3);
-  assert.deepEqual(await page.locator('[data-layer]').evaluateAll(bs=>bs.map(b=>b.dataset.layer)),['settlements','roads','maritime']);
-  assert.equal(await page.locator('#credits > li').count(), 8);
-  const credits=page.locator('#credits');
-  assert.match(await credits.textContent(),/10\.5287\/bodleian:eqapevAn8/);
-  assert.match(await credits.textContent(),/non-commercial academic/);
-  assert.match(await credits.locator('details pre').textContent(),/Copyright \(c\) 2013 Elijah Meeks/);
-  assert.equal(await credits.locator('a[target="_blank"][rel="noopener noreferrer"]').count(),16);
-  const box = await page.locator('canvas.maplibregl-canvas').boundingBox();
-  assert.ok(box.width >= 300 && box.height >= 200);
-}
-
-async function controls(page) {
-  const reset = page.locator('#reset'), coordinates = page.locator('#coordinates');
-  await reset.click();
-  const home = await coordinates.textContent();
-  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
-  await page.waitForTimeout(550);
-  const map = page.locator('#map canvas');
-  const box = await map.boundingBox();
-  const x = box.x + box.width / 2, y = box.y + box.height / 2;
-  await page.mouse.move(x, y); await page.mouse.down();
-  await page.mouse.move(x + 35, y - 25, { steps: 8 }); await page.mouse.up();
-  await page.waitForTimeout(700);
-  const view = await coordinates.textContent();
-  assert.notEqual(view, home);
-  const natural = await map.screenshot();
-  await page.locator('[value=simple]').check();
-  await page.waitForTimeout(350);
-  assert.notDeepEqual(natural, await map.screenshot());
-  assert.equal(await page.locator('[data-natural]').first().isVisible(), false);
-  assert.equal(await coordinates.textContent(), view);
-  await page.locator('[value=natural]').check();
-  assert.equal(await coordinates.textContent(), view);
-  await reset.click();
-  assert.equal(await coordinates.textContent(), home);
-}
-
-async function guide(page,width) {
-  const dialog=page.locator('#guide-dialog');
-  for (const [key,chapters] of [['datasets',5],['methods',2]]) {
-    const button=page.locator('[data-guide="'+key+'"]');
-    await button.click();
-    const article=dialog.locator('article:visible');
-    const links=article.locator('nav a');
-    assert.equal(await links.count(),chapters);
-    assert.equal(await article.locator('.guide-text h3').count(),chapters);
-    const box=await dialog.boundingBox();
-    assert(width===390 ? box.width===390 : box.width>=760 && box.width<=840);
-    assert(await dialog.evaluate(d=>d.scrollWidth===d.clientWidth));
-    for (const link of await links.all()) {
-      await link.click();
-      assert.equal('#'+await page.evaluate(()=>document.activeElement.id),await link.getAttribute('href'));
+async function migrations() {
+  const legacy=process.env.ATLAS_LEGACY;
+  if (!legacy && fixture) return {legacy:'Real legacy snapshot is exercised in the full run.'};
+  assert(legacy,'Supply the archived legacy site in ATLAS_LEGACY');
+  const manifest=JSON.parse(await readFile(path.join(legacy,'release.json')));
+  assert.equal(manifest.id,'foundation-340b3c94ee3b7e66');
+  for (const saved of [false,true]) {
+    serving=legacy;const oldProfile=path.join(work,'legacy-'+saved);
+    let page=await launch(oldProfile);await openAtlas(page);
+    await page.evaluate(()=>navigator.serviceWorker.ready);await page.waitForFunction(()=>navigator.serviceWorker.controller);
+    if (saved) {
+      await savePack(page);await close();await stop();
+      page=await launch(oldProfile,true);await openAtlas(page);
+      await openRecord(page,'hanson:Hanson2016_992');await serve();await context.setOffline(false);
     }
-    if (key==='datasets') await page.keyboard.press('Escape');
-    else await dialog.locator('#guide-close').click();
-    assert.equal(await dialog.isVisible(),false);
-    assert(await button.evaluate(b=>b===document.activeElement));
-    (proof.guideChapters ??= {})[key]=chapters;
-  }
-}
-
-async function tierInteractions(page,open,loaded) {
-  const tier=id=>page.locator('[data-tier="'+id+'"]');
-  const ports=page.locator('[data-sublayer=ports]');
-  const countText=id=>page.locator('[data-count="'+id+'"]').textContent();
-  const expected={settlements:{all:1388,medium:992,major:176,metropoleis:14},maritime:{all:584,'primary-network':515,open:143,'overseas-ferry':74},
-    roads:{all:14769,probable:13992,certain:1040}};
-  const observed={};
-  for(const [group,options] of Object.entries(expected)) {
-    observed[group]={};
-    for(const [value,count] of Object.entries(options)) {
-      await tier(group).selectOption(value);
-      assert((await countText(group)).startsWith(' ('+count.toLocaleString('en-US')));
-      const visible=await page.evaluate(async group=>{
-        const m=window.testMap, layers=m.getStyle().layers.filter(l=>l.source===group).map(l=>l.id);
-        // Evaluate the installed MapLibre filters over every source feature.
-        function evaluate(expr,p) {
-          if(!Array.isArray(expr)) return expr;
-          const [op,...args]=expr;
-          if(op==='literal') return args[0];
-          if(op==='get') return p[args[0]];
-          const a=args.map(e=>evaluate(e,p));
-          switch(op) {
-            case '==':return a[0]===a[1]; case 'in':return a[1].includes(a[0]);
-            case '!':return !a[0]; case 'all':return a.every(Boolean); case 'any':return a.some(Boolean);
-            default:throw Error('Unexpected map filter: '+op);
-          }
-        }
-        const filters=layers.map(id=>m.getFilter(id));
-        const fc=await m.getSource(group).getData();
-        return fc.features.filter(f=>filters.some(expr=>!expr || evaluate(expr,f.properties))).length;
-      },group);
-      assert.equal(visible,count);observed[group][value]=visible;
-    }
-  }
-  assert.equal(await page.locator('.key-coastal').isVisible(),false);
-  assert.equal(await page.locator('.key-conjectured').isVisible(),false);
-  assert.equal(await page.locator('.key-rank3').isVisible(),false);
-  await ports.uncheck();
-  assert.match(await countText('maritime'),/0 ports/);
-  assert.equal(await page.locator('.key-port').isVisible(),false);
-  assert.equal(await page.evaluate(()=>window.testMap.getLayoutProperty('ports','visibility')),'none');
-  await ports.check();assert.match(await countText('maritime'),/294 ports/);
-  for (const id of Object.keys(expected)) await tier(id).selectOption('auto');
-  const zoomCounts=[];
-  async function checkBand(z,towns,roads,routes) {
-    await page.evaluate(z=>window.testMap.jumpTo({zoom:z}),z);
-    assert.equal(await countText('settlements'),' ('+towns.toLocaleString('en-US')+')');
-    assert.equal(await countText('roads'),' ('+roads.toLocaleString('en-US')+')');
-    assert.equal(await countText('maritime'),' ('+routes+' routes · 294 ports)');
-    zoomCounts.push([z,towns,roads,routes]);
-  }
-  for(const band of [[4.49,176,13992,515],[4.5,992,13992,515],[4.99,992,13992,515],
-    [5,992,14769,515],[5.19,992,14769,515],[5.2,992,14769,584],[5.59,992,14769,584],
-    [5.6,1388,14769,584],[7,1388,14769,584],[4,176,13992,515]]) {
-    await checkBand(...band);
-  }
-  await page.evaluate(()=>window.testMap.jumpTo({center:[14,38],zoom:5.6}));
-  await page.waitForFunction(()=>window.testMap.loaded());
-  const detailView=await page.evaluate(()=>{
-    const types=(layers,key)=>[...new Set(window.testMap.queryRenderedFeatures({layers}).map(f=>f.properties[key]))].sort();
-    return {zoom:window.testMap.getZoom(),ranks:types(['settlements'],'rank'),
-      roads:types(['roads','roads-tentative'],'certainty'),routes:types(['maritime','maritime-coastal'],'t')};
-  });
-  assert(detailView.ranks.includes('4 or 5') && detailView.roads.includes('Hypothetical'));
-  assert(detailView.routes.includes('coastal') && detailView.routes.includes('slowover'));
-  proof.detailView=detailView;
-  await tier('settlements').selectOption('metropoleis');
-  await checkBand(6.5,14,14769,584);
-  await tier('roads').selectOption('certain');await tier('maritime').selectOption('all');
-  await checkBand(4,14,1040,584);
-  await checkBand(6.5,14,1040,584);
-  await tier('settlements').selectOption('all');
-  await tier('roads').selectOption('all'); await tier('maritime').selectOption('all');
-  const camera=()=>page.evaluate(()=>[...window.testMap.getCenter().toArray(),window.testMap.getZoom()]);
-  const roma='hanson:Hanson2016_992';
-  await page.evaluate(()=>{
-    const m=window.testMap,original=m.fitBounds;
-    window.testFits=0;m.fitBounds=function(...args){window.testFits++;return original.apply(this,args);};
-    m.jumpTo({center:[15,41],zoom:4});
-  });
-  const before=await camera();
-  await page.waitForFunction(()=>window.testMap.loaded());
-  const pos=await page.evaluate(()=>{
-    const {x,y}=window.testMap.project([12.485098,41.892777]); return {x,y};
-  });
-  const canvas=page.locator('#map canvas');
-  await canvas.hover({position:pos});
-  await page.waitForFunction(()=>document.querySelector('#map-hover').textContent==='Roma · Settlement (Rank 1)' &&
-    !document.querySelector('#map-hover').hidden);
-  assert.equal(await canvas.evaluate(c=>c.style.cursor),'pointer');
-  await canvas.click({position:pos});
-  await page.locator('#overlap-picker').waitFor();
-  assert.equal(await page.locator('#record-panel').getAttribute('data-loaded'),null);
-  const ids=await page.locator('#overlap-records button').evaluateAll(bs=>bs.map(b=>b.dataset.record));
-  assert.equal(ids[0],roma);assert(ids.length>1);
-  const ranks=await page.evaluate(async ids=>{
-    const fc=await window.testMap.getSource('settlements').getData();
-    const ranks=new Map(fc.features.map(f=>[f.properties.id,f.properties.rank]));
-    return ids.filter(id=>ranks.has(id)).map(id=>ranks.get(id));
-  },ids);
-  assert(ranks.length>1);
-  const rankOrder=rank=>({'1':0,'2':1,'3':2}[rank] ?? 3);
-  assert.deepEqual(ranks,[...ranks].sort((a,b)=>rankOrder(a)-rankOrder(b)));
-  assert.deepEqual(await camera(),before);await page.locator('#overlap-records button').nth(1).click();await loaded(ids[1]);
-  assert.deepEqual(await camera(),before);assert.equal(await page.evaluate(()=>window.testFits),0);
-  await open(roma);const located=await camera();assert.notDeepEqual(located,before);
-  assert.equal(await page.evaluate(()=>window.testFits),1);
-  await ports.uncheck();
-  await open('orbis:route:987571');
-  const related=page.locator('#record-content button[data-related]').first();
-  const destination=await related.getAttribute('data-related');await related.click();await loaded(destination);
-  assert.equal(await page.evaluate(()=>window.testFits),3);
-  assert.equal(await page.evaluate(async()=>(await window.testMap.getSource('selected-record').getData()).properties.id),destination);
-  assert(await page.locator('#selection-notice').isVisible());
-  await ports.check();
-  await page.locator('#close-record').click();
-  assert.equal(await page.locator('#map-hover').isVisible(),false);
-  for(const id of ['settlements','roads','maritime']) await page.locator('[data-layer="'+id+'"]').uncheck();
-  await canvas.hover({position:pos});assert.equal(await page.locator('#map-hover').isVisible(),false);
-  for(const id of ['settlements','roads','maritime']) await page.locator('[data-layer="'+id+'"]').check();
-  // Isolate a lower-ranked city. Its native rank must control rendering, hits and highlighting together.
-  const isolated=await page.evaluate(async()=>{
-    const m=window.testMap,fc=await m.getSource('settlements').getData();
-    return fc.features.find(f=>f.properties.rank==='4 or 5' &&
-      fc.features.every(other=>other===f || Math.hypot(...other.geometry.coordinates.map((v,i)=>v-f.geometry.coordinates[i]))>0.4)).properties.id;
-  });
-  await open(isolated);
-  await page.locator('[data-layer=maritime]').uncheck();await page.locator('[data-layer=roads]').uncheck();
-  await page.locator('#close-record').click();
-  const isolatedPos=await page.evaluate(async id=>{
-    const m=window.testMap, city=(await m.getSource('settlements').getData()).features.find(f=>f.properties.id===id);
-    const [lng,lat]=city.geometry.coordinates;m.jumpTo({center:[lng+0.2,lat],zoom:5.7});
-    const {x,y}=m.project([lng,lat]);return {x,y};
-  },isolated);
-  const isolatedCamera=await camera();
-  await page.waitForFunction(()=>window.testMap.loaded());
-  await canvas.click({position:isolatedPos});await loaded(isolated);
-  assert.equal(await page.locator('#overlap-picker').isVisible(),false);assert.deepEqual(await camera(),isolatedCamera);
-  await tier('settlements').selectOption('major');
-  assert.equal(await page.evaluate(async()=>(await window.testMap.getSource('selected-record').getData()).properties.id),isolated);
-  assert(await page.locator('#selection-notice').isVisible());
-  await page.locator('#close-record').click();await page.waitForFunction(()=>window.testMap.loaded());
-  await canvas.hover({position:isolatedPos});await canvas.click({position:isolatedPos});
-  assert.equal(await page.locator('#record-panel').isVisible(),false);
-  assert.equal(await page.locator('#map-hover').isVisible(),false);
-  assert.deepEqual(await camera(),isolatedCamera);
-  assert.equal(await page.evaluate(()=>window.testFits),4);
-  await tier('settlements').selectOption('all');
-  await page.locator('[data-layer=maritime]').check();await page.locator('[data-layer=roads]').check();
-  proof.detailFilters={counts:observed,autoByZoom:zoomCounts,manualAtZoom65:{towns:14,roads:1040,routes:584},
-    hover:'Roma · Settlement (Rank 1)',overlapCityRanks:ranks,mapAndPickerCamera:before,searchCamera:located,
-    isolatedCity:isolated,isolatedClickCamera:isolatedCamera,filteredCityExcludedFromHits:true,
-    directAndPickerFitCalls:0,searchAndRelationFitCalls:3};
-}
-
-async function savedTiers(page,write) {
-  const settings={settlements:'major',maritime:'overseas-ferry',roads:'certain'};
-  for(const [id,value] of Object.entries(settings)) {
-    const select=page.locator('[data-tier="'+id+'"]');
-    if(write) await select.selectOption(value);
-    assert.equal(await select.inputValue(),value);
-  }
-  const ports=page.locator('[data-sublayer=ports]');
-  if(write) await ports.check();
-  assert(await ports.isChecked());
-  assert.equal(await page.locator('[data-count=maritime]').textContent(),' (74 routes · 294 ports)');
-  assert.equal(await page.locator('[data-count=roads]').textContent(),' (1,040)');
-  assert.equal(await page.locator('[data-count=settlements]').textContent(),' (176)');
-}
-
-async function observeMap(page) {
-  // Observe the map instance through its public API for this browser test only.
-  await page.evaluate(async()=>{
-    const {Map:GLMap}=await import('/vendor/maplibre-gl/maplibre-gl.mjs');
-    const original=GLMap.prototype.fitBounds;
-    GLMap.prototype.fitBounds=function(...args){
-      GLMap.prototype.fitBounds=original;
-      window.testMap=this;
-      return original.apply(this,args);
-    };
-  });
-  await page.locator('#reset').click();
-  if (!publicURL) {
-    assert(await page.locator('[value=simple]').isChecked());
-    assert.equal(await page.evaluate(()=>window.testMap.getLayoutProperty('relief','visibility')),'none');
-  }
-  await page.locator('[value=natural]').check();
-  await page.locator('[value=simple]').check();
-  assert.equal(await page.evaluate(()=>window.testMap.getLayoutProperty('relief','visibility')),'none');
-  assert(await page.locator('.maplibregl-ctrl-attrib').innerText().then(t=>t.includes('Natural Earth')));
-  await page.locator('[value=natural]').check();
-  await page.waitForFunction(()=>window.testMap.loaded());
-  const startup=await page.evaluate(()=>{
-    const m=window.testMap;
-    return Object.fromEntries(['settlements','roads','maritime','ports'].map(source=>{
-      const layers=m.getStyle().layers.filter(l=>l.source===source).map(l=>l.id);
-      return [source,new Set(m.queryRenderedFeatures({layers}).map(f=>f.properties.id)).size];
-    }));
-  });
-  assert(startup.settlements>0 && startup.roads>0 && startup.maritime>0 && startup.ports===0);
-  const first=await page.evaluate(()=>{
-    const m=window.testMap, hits=id=>m.queryRenderedFeatures({layers:[id]});
-    const coasts=hits('maritime-coastal');
-    const routes=new Map(coasts.map(f=>[f.properties.id,f.properties.label]));
-    const probes=['988294','980380','979592','981507','982838'].map(n=>'orbis:route:'+n);
-    return {zoom:m.getZoom(),counts:[...document.querySelectorAll('[data-count]')].map(x=>x.textContent.trim()),
-      ranks:[...new Set(hits('settlements').map(f=>f.properties.rank))].sort(),
-      certainty:[...new Set(hits('roads').map(f=>f.properties.certainty))].sort(),
-      water:[...new Set([...coasts,...hits('maritime')].map(f=>f.properties.t))].sort(),
-      coastalProbes:probes.map(id=>({id,label:routes.get(id)})),
-      tentativeIDs:[...new Set(hits('roads-tentative').map(f=>f.properties.id))].sort()};
-  });
-  assert(first.zoom>=1 && first.zoom<4.5);
-  assert.deepEqual(first.counts,['(176)','(13,992)','(515 routes · 0 ports)']);
-  assert.deepEqual(first.ranks,['1','2']);assert.deepEqual(first.certainty,['Certain','Conjectured']);
-  assert.deepEqual(first.water,['coastal','ferry','overseas']);
-  for (const route of first.coastalProbes) assert.match(route.label,/ · coastal$/,route.id);
-  for (const id of first.tentativeIDs) assert(['itinere:17122148:14767','itinere:17122148:14768'].includes(id));
-  proof.defaultRendered=startup;proof.defaultView=first;
-}
-
-async function interactions(page) {
-  const groups=['settlements','roads','maritime'];
-  const toggle=g=>page.locator('[data-layer="'+g+'"]');
-  await page.locator('[data-tier=maritime]').selectOption('all');
-  await page.locator('[data-sublayer=ports]').check();
-  for (let mask=0; mask<8; mask++) {
-    for (const [i,g] of groups.entries()) await toggle(g).setChecked(Boolean(mask&(1<<i)));
-    const shown=await page.evaluate(()=>{
-      const visibility=id=>window.testMap.getLayoutProperty(id,'visibility')==='visible';
-      return ['settlements','roads','roads-tentative','maritime','maritime-coastal','ports'].map(visibility);
+    serving=dist;
+    const navigations=[];page.on('framenavigated',f=>{if(f===page.mainFrame()) navigations.push(f.url());});
+    await page.evaluate(async()=>{const reg=await navigator.serviceWorker.ready;await reg.update();}).catch(e=>{
+      if (!e.message.includes('Execution context was destroyed')) throw e;
     });
-    const [towns,roads,sea]=groups.map((_,i)=>Boolean(mask&(1<<i)));
-    assert.deepEqual(shown,[towns,roads,roads,sea,sea,sea]);
-    assert.deepEqual(await page.locator('.legend-group').evaluateAll(gs=>gs.map(g=>
-      getComputedStyle(g).display!=='none')), [towns,roads,sea]);
-  }
-  const style=await page.evaluate(()=>{
-    const m=window.testMap;
-    return {roads:m.getPaintProperty('roads','line-width'),color:m.getPaintProperty('roads','line-color'),
-      roadOpacity:m.getPaintProperty('roads','line-opacity'),radius:m.getPaintProperty('settlements','circle-radius'),
-      stroke:m.getPaintProperty('settlements','circle-stroke-width'),seaWidth:m.getPaintProperty('maritime','line-width'),
-      seaOpacity:m.getPaintProperty('maritime','line-opacity'),
-      coastWidth:m.getPaintProperty('maritime-coastal','line-width'),coastOpacity:m.getPaintProperty('maritime-coastal','line-opacity'),
-      coastColor:m.getPaintProperty('maritime-coastal','line-color'),seaColor:m.getPaintProperty('maritime','line-color'),
-      coastSolid:m.getPaintProperty('maritime-coastal','line-dasharray')==null,
-      tentative:m.getPaintProperty('roads-tentative','line-dasharray'),maritime:m.getPaintProperty('maritime','line-dasharray'),
-      filter:m.getFilter('roads-tentative')};
-  });
-  // Sample the linear stops installed in MapLibre for each native class.
-  function paintValue(expression,zoom,value) {
-    assert.deepEqual(expression.slice(0,3),['interpolate',['linear'],['zoom']]);
-    const stops=[];
-    for(let i=3;i<expression.length;i+=2) {
-      const match=expression[i+1];
-      if (typeof match==='number') {stops.push([expression[i],match]);continue;}
-      assert.equal(match[0],'match');
-      const index=match.findIndex((entry,j)=>j>=2 && j%2===0 && entry===value);
-      stops.push([expression[i],index<0?match.at(-1):match[index+1]]);
-    }
-    if (zoom<=stops[0][0]) return stops[0][1];
-    for(let i=1;i<stops.length;i++){
-      const [z0,v0]=stops[i-1], [z1,v1]=stops[i];
-      if(zoom<=z1) return Number((v0+(v1-v0)*(zoom-z0)/(z1-z0)).toFixed(4));
-    }
-    return stops.at(-1)[1];
-  }
-  const samples=(expr,zooms,value)=>zooms.map(z=>paintValue(expr,z,value));
-  assert.deepEqual(samples(style.radius,[3,5,7],'1'),[4.2,5.4,6.8]);
-  assert.deepEqual(samples(style.radius,[3,3.4,5,7],'2'),[2.5,2.76,3.8,5]);
-  assert.deepEqual(samples(style.radius,[5,7],'3'),[2.8,3.8]);
-  assert.equal(paintValue(style.radius,7,'4 or 5'),2.8);assert.equal(paintValue(style.stroke,3,'2'),0.5);
-  assert.deepEqual(samples(style.roads,[3,7],'Certain'),[1.25,2.4]);
-  assert.equal(paintValue(style.roadOpacity,3,'Certain'),0.88);
-  assert.deepEqual(samples(style.roads,[3,5,7],'Conjectured'),[0.42,0.85,1.45]);
-  assert.deepEqual(samples(style.roadOpacity,[3,5,7],'Conjectured'),[0.32,0.62,0.85]);
-  assert.deepEqual(samples(style.seaWidth,[3,7],'overseas'),[1.2,2.2]);
-  assert.equal(paintValue(style.seaOpacity,3,'overseas'),0.72);assert.notEqual(style.color[3],style.color[4]);
-  assert.deepEqual(samples(style.coastWidth,[3,7]),[0.55,1.25]);
-  assert.deepEqual(samples(style.coastOpacity,[3,7]),[0.38,0.75]);
-  assert(style.coastSolid);assert.notEqual(style.coastColor,style.seaColor);
-  assert(style.tentative.length && style.maritime.length && JSON.stringify(style.filter).includes('Hypothetical') && JSON.stringify(style.filter).includes('ferry'));
-  const loaded=id=>page.locator('#record-panel[data-loaded="'+id+'"]').waitFor();
-  const open=async id=>{
-    await page.locator('#search').fill(id);
-    await page.locator('#search-results button[data-record="'+id+'"]').click();
-    await loaded(id);
-  };
-  const waitForLayer=async id=>{
-    await page.waitForFunction(id=>window.testMap.loaded() &&
-      window.testMap.queryRenderedFeatures({layers:[id]}).length>0,id);
-  };
-  await tierInteractions(page,open,loaded);
-  const selection=()=>page.evaluate(async()=>await window.testMap.getSource('selected-record').getData());
-  const geometries={};
-  for (const [id,type,group] of [
-    ['hanson:Hanson2016_992','Point','settlements'],['itinere:17122148:0','LineString','roads'],
-    ['orbis:route:987571','MultiLineString','maritime'],['pleiades:423025','Point',null]]) {
-    await open(id);
-    assert.equal((await selection()).geometry.type,type);
-    await waitForLayer(type==='Point'?'selected-point':'selected-line');
-    if(group) {
-      await toggle(group).uncheck();
-      assert.equal((await selection()).properties.id,id);
-      assert(await page.locator('#selection-notice').isVisible());
-      await toggle(group).check();
-      assert.equal((await selection()).properties.id,id);
+    if (saved) {
+      await page.locator('#update-app').waitFor();assert.equal(await page.locator('[data-layer]').count(),3);
+      await page.locator('#update-app').click();
+      await page.locator('#storage-status').filter({hasText:'A previous v0.1 offline package is stored'}).waitFor({timeout:60000});
+      await ready(page);assert(await page.locator('#remove').isVisible());await close();await stop();
+      page=await launch(oldProfile,true);await page.goto(origin);
+      await page.locator('#storage-status').filter({hasText:'Reconnect to upgrade'}).waitFor();
+      assert.equal(await page.locator('#foundation-controls').isVisible(),false);assert(await page.locator('#remove').isVisible());
+      await serve();await context.setOffline(false);await page.reload();await ready(page);await savePack(page);
+      assert.equal((await savedState(page)).id,base.id);
     } else {
-      for(const g of groups) await toggle(g).uncheck();
-      assert.equal((await selection()).properties.id,id);
-      await waitForLayer('selected-point');
-      const highlighted=await page.evaluate(()=>window.testMap.queryRenderedFeatures({layers:['selected-point']})
-        .map(f=>({id:f.properties.id,geometry:f.geometry.type,layer:f.layer.type})));
-      assert(highlighted.some(f=>f.id===id && f.geometry==='Point' && f.layer==='circle'));
-      proof.pleiadesHighlight={id,source:(await selection()).type,rendered:'circle',baseGroupsOn:0};
-      for(const g of groups) await toggle(g).check();
+      await page.locator('[data-layer=events]').waitFor({timeout:60000});assert(navigations.length<=1);
     }
-    geometries[id]=type;
+    await close();
   }
-  const roma='hanson:Hanson2016_992';
-  await open(roma);
-  await waitForLayer('settlements');
-  const location=await page.evaluate(()=>{
-    const {x,y}=window.testMap.project([12.485098,41.892777]);return {x,y};
-  });
-  await page.locator('#map canvas').click({position:location});
-  const choices=page.locator('#overlap-records button');
-  await choices.first().waitFor();
-  const ids=await choices.evaluateAll(bs=>bs.map(b=>b.dataset.record));
-  assert.equal(new Set(ids).size,ids.length);
-  assert(ids.length>1 && ids[0]===roma);
-  assert.equal(await page.locator('#overlap-count').textContent(),ids.length+' overlapping records at this location');
-  assert((await choices.locator('small').allTextContents()).every(s=>s.split(' · ').every(Boolean)));
-  assert.equal(await page.locator('#record-panel').getAttribute('data-loaded'),null);
-  await choices.nth(1).click();await loaded(ids[1]);
-  const camera=()=>page.evaluate(()=>[...window.testMap.getCenter().toArray(),window.testMap.getZoom()]);
-  const before=await camera(), highlight=await selection();
-  for(const mode of ['simple','natural']){
-    await page.locator('[value='+mode+']').check();
-    assert.deepEqual(await camera(),before);
-    assert.deepEqual(await selection(),highlight);
-    assert.deepEqual(await choices.evaluateAll(bs=>bs.map(b=>b.dataset.record)),ids);
-    assert.equal(await choices.nth(1).getAttribute('aria-pressed'),'true');await loaded(ids[1]);
-  }
-  await toggle('maritime').uncheck();
-  await page.locator('[value=simple]').check();
-  await page.waitForFunction(async()=>{const {readState}=await import('/storage.js');
-    return (await readState('layers')).maritime===false && (await readState('mode'))==='simple';});
-  // Restore the manual 74-route tier saved by the previous release.
-  await page.evaluate(async()=>{
-    const {readState,writeState}=await import('/storage.js'), state=await readState('layers');
-    await writeState('layers',{...state,tiers:{...state.tiers,maritime:'primary'}});
-  });
-  await page.reload();await page.locator('#foundation-controls').waitFor();
-  assert(await toggle('settlements').isChecked() && await toggle('roads').isChecked());
-  assert.equal(await toggle('maritime').isChecked(),false);
-  assert(await page.locator('[value=simple]').isChecked());
-  await toggle('maritime').check();await page.locator('[value=natural]').check();
-  assert.equal(await page.locator('[data-tier=maritime]').inputValue(),'overseas-ferry');
-  assert.match(await page.locator('[data-count=maritime]').textContent(),/74 routes/);
-  proof.restoredLegacyMaritimeTier='overseas-ferry';
-  Object.assign(proof,{layerCombinations:8,overlapAtRoma:ids,selectedFromPicker:ids[1],
-    cameraUnchanged:before,highlightGeometry:geometries,style,indexedDBReload:'pass'});
+  return {legacy:manifest.id,automatic:true,storedPackage:true};
 }
 
-const proof={};
-async function foundation(page,full) {
-  await page.locator('#foundation-controls').waitFor();
-  const search=page.locator('#search'), body=page.locator('#record-content');
-  const loaded=id=>page.locator('#record-panel[data-loaded="'+id+'"]').waitFor();
-  async function open(id) {
-    await search.fill(id);
-    await page.locator('#search-results button[data-record="'+id+'"]').click();
-    await loaded(id);
-  }
-  for (const query of ['Roma','Rhome']) {
-    await search.fill(query);
-    const first=query==='Roma'?'hanson:Hanson2016_992':'pleiades:423025';
-    await page.waitForFunction(id=>document.querySelector('#search-results button')?.dataset.record===id,first);
-    const ids=await page.locator('#search-results button').evaluateAll(bs=>bs.map(b=>b.dataset.record));
-    if (query==='Roma') assert.deepEqual(ids.slice(0,2),[first,'pleiades:423025']);
-    else assert(!ids.includes('hanson:Hanson2016_992'));
-    proof[query]=ids.slice(0,2);
-  }
-  await search.fill('تل ابو شيجة');
-  await page.locator('#search-results button[data-record="pleiades:108542249"]').click();
-  await loaded('pleiades:108542249');
-  if (!full) { await page.locator('#close-record').click(); return; }
-  assert(await page.locator('#search-category').isVisible());
-  await page.locator('#search-category').selectOption('Settlement');
-  await search.fill('Roma');
-  await page.locator('#search-results button[data-record="hanson:Hanson2016_992"]').waitFor();
-  assert((await page.locator('#search-results button').evaluateAll(bs=>bs.map(b=>b.dataset.record))).every(id=>id.startsWith('hanson:')));
-  await page.locator('#search-category').selectOption('');
-  for(const box of await page.locator('[data-layer]').all()){await box.uncheck();await box.check();}
-  await page.locator('#search-source').selectOption('pleiades');
-  await search.fill('Roma');
-  assert.equal(await page.locator('#search-results button').first().getAttribute('data-record'),'pleiades:423025');
-  await page.locator('#search-source').selectOption('');
-  proof.catalogSearch=await page.evaluate(async()=>{
-    const {searchIndex}=await import('/search.js');
-    const release=await (await fetch('/release.json')).json();
-    const file=release.files.find(f=>f.path.endsWith('/catalog.json.gz'));
-    const response=await fetch('/'+file.path);
-    const {records}=await new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).json();
-    const index=searchIndex(records);
-    let total=0,misses=0;
-    for(const record of records) {
-      for(const name of [record.label,...(record.aliases||[])]) {
-        const query=name.normalize('NFD').replace(/\p{M}/gu,'');
-        let found=false;
-        for (const hit of index.search(query)) {
-          if (hit.tier>2) break;
-          if (hit.record.id===record.id) {found=true;break;}
-        }
-        total++;if (!found) misses++;
+async function installingRace() {
+  const page=await launch(path.join(work,'race'));
+  const cdp=await context.newCDPSession(page);
+  await cdp.send('Network.enable');await cdp.send('Network.setCacheDisabled',{cacheDisabled:true});
+  const states=[];
+  await page.exposeFunction('noteWorker',state=>states.push(state));
+  await page.addInitScript(()=>{
+    navigator.serviceWorker?.getRegistration().then(reg=>{
+      reg?.addEventListener('updatefound',()=>{const w=reg.installing;window.noteWorker(w.state);});
+    });
+  });
+  await openAtlas(page);
+  await page.waitForFunction(()=>navigator.serviceWorker.controller);
+  await page.evaluate(()=>sessionStorage.setItem('race','started'));
+  missing='/packs/'+base.id+'/relief.pmtiles';slowShell=true;shellSuffix='-next';await prepareUpdate('next');
+  await page.reload();
+  await page.waitForFunction(id=>document.querySelector('#package-description')?.textContent.startsWith(id),update.id,{timeout:60000});
+  await ready(page);
+  assert(states.includes('installing'));assert.equal(await page.evaluate(()=>sessionStorage.getItem('retry-shell')),base.id);
+  assert((await page.locator('#package-description').textContent()).includes(update.id));assert(oldRequests>0);
+  missing=null;slowShell=false;shellSuffix='';update=null;await close();
+}
+async function installed(page) {
+  const manifestId=origin+'/';
+  const cdp=await context.newCDPSession(page);
+  await cdp.send('PWA.install',{manifestId,installUrlOrBundleUrl:manifestId});
+  await cdp.send('PWA.changeAppUserSettings',{manifestId,displayMode:'standalone'});
+  const state=await cdp.send('PWA.getOsAppState',{manifestId});
+  async function launchApp(cdp) {
+    const {targetId}=await cdp.send('PWA.launch',{manifestId});
+    const {windowId}=await cdp.send('Browser.getWindowForTarget',{targetId});
+    const until=Date.now()+20000;
+    while (Date.now()<until) {
+      for (const tab of context.pages()) {
+        if (!tab.url().startsWith(manifestId)) continue;
+        const session=await context.newCDPSession(tab);
+        let own;
+        try { own=await session.send('Browser.getWindowForTarget'); }
+        finally { await session.detach(); }
+        if (own.windowId!==windowId || !await tab.evaluate(()=>matchMedia('(display-mode: standalone)').matches)) continue;
+        await ready(tab);return tab;
       }
+      await new Promise(resolve=>setTimeout(resolve,150));
     }
-    return {records:records.length,total,misses};
-  });
-  assert.deepEqual(proof.catalogSearch,{records:49711,total:92326,misses:0});
-  await open('hanson:Hanson2016_992');
-  for (const layer of ['maritime','roads']) await page.locator('[data-layer="'+layer+'"]').uncheck();
-  await page.locator('#close-record').click();
-  const canvas=page.locator('#map canvas');
-  await canvas.click();
-  await loaded('hanson:Hanson2016_992');
-  proof.mapClick='hanson:Hanson2016_992';
-  for (const layer of ['maritime','roads']) await page.locator('[data-layer="'+layer+'"]').check();
-  await open('hanson:Hanson2016_1');
-  await body.getByRole('button',{name:'BNP',exact:true}).click();
-  await loaded('hanson:bibliography');
-  assert.equal(await page.locator('.selected-reference').getAttribute('id'),'reference-18');
-  await open('hanson:unmatched');assert.match(await body.innerText(),/Agora\?/);
-  for(const fid of ['14767','14768']){
-    await open('itinere:17122148:'+fid);
-    assert.match(await body.locator('.record-notes').innerText(),/temporary ferry connector/i);
-    await body.locator('.original-source summary').click();
-    const original=JSON.parse(await body.locator('.original-source pre').textContent());
-    assert(original.native_crs && original.native_geometry.coordinates.length);
-    await body.getByRole('button',{name:'Open field definitions'}).click();
-    await loaded('itinere:fields');
-    assert.equal(await body.locator('table tr').count(),16);
-    assert.equal(await body.locator('table td,table th').count(),64);
+    throw new Error('Installed app did not open in a standalone window');
   }
-  await open('itinere:17122148:14768');
-  await body.getByRole('button',{name:'Open source bibliography'}).click();
-  await loaded('itinere:bibliography');
-  assert.equal(await body.locator('[data-citation]').count(),627);
-  await body.getByRole('searchbox').fill('petrovic_locating_2008');
-  assert.equal(await body.locator('[data-citation]').count(),1);
-  await body.locator('.original-source summary').click();
-  const raw=await body.locator('pre').textContent();
-  const bytes=new TextEncoder().encode(raw);
-  assert.equal(bytes.length,248702);
-  assert.equal(Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex'),'8c819a8238664666042b1f538dc319f364f13358715322b40d29bac21ec3b0a7');
-  for(const node of ['50457','50522','50572','50786','50789','50790','50792']){
-    const id='orbis:place:'+node;
-    await open(id);assert.match(await body.innerText(),/Unlocated/);
-    await body.getByRole('button').first().click();
-    await page.locator('#record-panel[data-loaded^="orbis:route:"]').waitFor();
-    await body.getByRole('button',{name:new RegExp(node)}).first().click();await loaded(id);
-  }
-  await open('pleiades:97294452');
-  const duplicate=await body.locator('[data-name-key^="97294452/kerameikos/"]').evaluateAll(ns=>ns.map(n=>n.dataset.nameKey));
-  assert.equal(new Set(duplicate).size,2);
-  await open('pleiades:172198383');await body.getByText('Unspecified',{exact:true}).waitFor({state:'attached'});
-  await body.locator('.original-source summary').click();assert.match(await body.locator('pre').textContent(),/"name_type": "undefined"/);
-  await open('pleiades:139216315');
-  assert(!/mso-|<style|&amp;/.test(await body.innerText()));
-  await page.locator('#close-record').click();
-  await search.fill('');await page.locator('#reset').click();
-  Object.assign(proof,{maritimeReverseLinks:7,ferries:2,citationRedirect:18,docxCells:64,rawBibBytes:bytes.length,distinctKerameikosRows:duplicate.length});
-}
-
-async function captureMap(page) {
-  await page.evaluate(async()=>{
-    const {Map:AtlasMap}=await import('/vendor/maplibre-gl/maplibre-gl.mjs');
-    const original=AtlasMap.prototype.fitBounds;
-    AtlasMap.prototype.fitBounds=function(...args) {
-      AtlasMap.prototype.fitBounds=original;
-      window.testMap=this;
-      return original.apply(this,args);
-    };
-  });
-  await page.locator('#reset').click();
-}
-
-async function mobilePicking(page) {
-  await captureMap(page);
-  await page.waitForFunction(()=>window.testMap.loaded());
-  const bounds=await page.evaluate(()=>window.testMap.getBounds().toArray());
-  assert(bounds[0][0]<=-17 && bounds[1][0]>=55,JSON.stringify(bounds));
-  await page.evaluate(()=>window.testMap.jumpTo({center:[12.4851,41.8928],zoom:4}));
-  await page.waitForFunction(()=>window.testMap.loaded());
-  const point=await page.evaluate(()=>{
-    const {x,y}=window.testMap.project([12.4851,41.8928]); return {x,y};
-  });
-  await page.locator('#map canvas').click({position:point});
-  await page.locator('#overlap-picker').waitFor();
-  assert.equal(await page.locator('#record-panel').getAttribute('data-loaded'),null);
-  await page.locator('#overlap-records button').first().click();
-  await page.locator('#record-panel[data-loaded]').waitFor();
-  for (const selector of ['#record-panel','#close-record']) {
-    const box=await page.locator(selector).boundingBox();
-    assert(box.x>=0 && box.x+box.width<=390 && box.y>=0 && box.y+box.height<=845,JSON.stringify(box));
-  }
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),390);
-  await page.locator('#close-record').click();
-  assert(await page.locator('#search').evaluate(input=>input===document.activeElement));
-  proof.narrowMapPicker=true;
-}
-
-async function savedState(page) {
-  return page.evaluate(async()=>{
-    const {activeRelease,readState}=await import('/storage.js');
-    const active=await activeRelease(true);
-    const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('atlas-packages');
-    const dirs=[];
-    for await (const name of root.keys()) dirs.push(name);
-    return {id:active.id,dir:active.storageDirectory,dirs,completed:await readState('completed'),transfer:await readState('transfer')};
-  });
-}
-
-async function prepareUpdate(fault) {
-  update=structuredClone(base);
-  update.id='foundation-test-'+fault;
-  for (const f of update.files) f.path=f.path.replace(base.id,update.id);
-  override=null;
-  const file=update.files.find(f=>f.path.includes(fault==='closure'?'/catalog.json.gz':'/details-hanson-cities-'));
-  const data=await readFile(path.join(dist,file.path.replace(update.id,base.id)));
-  if (['corrupt','gzip','closure'].includes(fault)) {
-    let bytes=Buffer.from(data);
-    if (fault==='closure') {
-      const catalog=JSON.parse(gunzipSync(bytes));
-      catalog.records[0].detail='missing-detail.json.gz';
-      bytes=gzipSync(JSON.stringify(catalog));
-    } else bytes[0]^=255;
-    if (fault!=='corrupt') {
-      file.sha256=createHash('sha256').update(bytes).digest('hex');
-      update.bytes+=bytes.length-file.bytes;
-      file.bytes=bytes.length;
-    }
-    override={path:'/'+file.path,bytes};
-  }
-}
-
-// Model the old startup order and the old worker's network-first manifest.
-async function legacyApp() {
-  const release=await (await fetch('/release.json')).json();
-  const allowed=new Set(['land.geojson','ocean.geojson','lakes.geojson','rivers.geojson','relief.pmtiles',
-    'sources.json','catalog.json.gz','relations.json.gz','settlements.geojson.gz','roads.geojson.gz',
-    'maritime.geojson.gz','ports.geojson.gz']);
-  const shard=/^details-(?:hanson-cities|itinere|orbis-maritime|pleiades)-\d{3,}\.json\.gz$/;
-  const names=release.files.map(file=>file.path.split('/').pop());
-  if (names.some(name=>!allowed.has(name) && !shard.test(name))) {
-    const error=document.querySelector('#map-error');
-    error.textContent='Unexpected map package contents.';
-    error.hidden=false;
-    return;
-  }
-  await navigator.serviceWorker.register('/sw.js');
-}
-
-function legacyWorker() {
-  const name='atlas-shell-legacy';
-  self.oninstall=event=>event.waitUntil(caches.open(name).then(cache=>cache.addAll(['/','/app.js','/release.json'])));
-  self.onactivate=event=>event.waitUntil(self.clients.claim());
-  self.onfetch=event=>{
-    if (new URL(event.request.url).pathname==='/release.json') {
-      event.respondWith(fetch(event.request).catch(()=>caches.match('/release.json',{cacheName:name})));
-      return;
-    }
-    const key=event.request.mode==='navigate' ? '/' : event.request;
-    event.respondWith(caches.match(key,{cacheName:name}).then(hit=>hit || fetch(event.request)));
-  };
-}
-
-async function shellTransitions() {
-  console.error('Checking legacy shell takeover and waiting-worker detail reload');
-  const visitor=await context.browser().newContext();
-  visitor.setDefaultTimeout(30000);
-  const tab=await visitor.newPage();
-  const url=origin+'/?visit=returning';
-  const worker=await readFile(path.join(dist,'sw.js'));
-  let serveWorker;
-  const rollout=new Promise(resolve=>{ serveWorker=()=>resolve(worker); });
-  try {
-    const legacy=structuredClone(base);
-    delete legacy.view_bounds;
-    legacy.view_zoom=[2,7];
-    legacy.files=legacy.files.filter(file=>!file.path.endsWith('/coast.geojson'));
-    legacy.bytes=legacy.files.reduce((sum,file)=>sum+file.bytes,0);
-    shellFixtures.set('/release.json',JSON.stringify(legacy));
-    shellFixtures.set('/app.js',`(${legacyApp})();`);
-    shellFixtures.set('/sw.js',`(${legacyWorker})();`);
-    await tab.goto(url);
-    await tab.waitForFunction(()=>!!navigator.serviceWorker.controller);
-    shellFixtures.clear();
-    // Hold the returning navigation's browser-initiated update check until the error is visible.
-    shellFixtures.set('/sw.js',rollout);
-    await tab.reload();
-    await tab.getByText('Unexpected map package contents.',{exact:true}).waitFor();
-    shellFixtures.clear();
-    serveWorker();
-    await tab.locator('#map[data-ready=true]').waitFor({timeout:60000});
-    assert.equal(tab.url(),url);
-    assert.equal(await tab.evaluate(()=>caches.has('atlas-shell-legacy')),false);
-    proof.legacyShellTakeover=true;
-    await staleDetail(visitor,true);
-  } finally {
-    serveWorker();
-    shellFixtures.clear();
-    update=null;
-    await visitor.close();
-  }
-}
-
-async function staleDetail(browserContext=context, withWaitingWorker=false) {
-  const tab=await browserContext.newPage();
-  // Model a tab requesting a shard it has never cached.
-  const network=await browserContext.newCDPSession(tab);
-  await network.send('Network.enable');
-  await network.send('Network.setCacheDisabled',{cacheDisabled:true});
-  const shard=base.files.find(f=>f.path.includes('/details-pleiades-075.'));
-  const records=JSON.parse(gunzipSync(await readFile(path.join(dist,shard.path))));
-  const id=Object.keys(records)[0];
-  try {
-    await tab.goto(origin); await tab.locator('#map[data-ready=true]').waitFor();
-    missingDetail='/'+shard.path;
-    const open=async()=>{
-      await tab.locator('#search').fill(id);
-      await tab.locator('#search-results button[data-record="'+id+'"]').click();
-    };
-    await open();
-    await tab.getByText('A newer atlas release is online. Reload to open this record.').waitFor();
-    if (withWaitingWorker) {
-      await prepareUpdate('complete');
-      const worker=await readFile(path.join(dist,'sw.js'),'utf8');
-      shellFixtures.set('/sw.js',worker.replace(/atlas-shell-[0-9a-f]{16}/,'atlas-shell-test-next'));
-      await tab.evaluate(async()=>(await navigator.serviceWorker.ready).update().then(()=>true));
-      await tab.locator('#update-app').waitFor();
-      assert(await tab.evaluate(async()=>!!(await navigator.serviceWorker.ready).waiting));
-    } else missingDetail=null;
-    await Promise.all([tab.waitForNavigation(),tab.locator('#record-content').getByRole('button',{name:'Reload',exact:true}).click()]);
-    await tab.locator('#map[data-ready=true]').waitFor();
-    if (withWaitingWorker) {
-      assert.equal(await tab.evaluate(async()=>(await (await fetch('/release.json')).json()).id),update.id);
-    }
-    await open();
-    await tab.locator('#record-panel[data-loaded="'+id+'"]').waitFor();
-    if (withWaitingWorker) proof.staleDetailActivatedWaitingWorker=true;
-    else proof.staleDetailRecovery=true;
-  } finally { missingDetail=null; await tab.close(); }
-}
-
-async function updateLifecycle(page) {
-  update={...base,id:'future-release',app_schema:2};
-  const manifests=await page.evaluate(async()=>{
-    const {validateManifest}=await import('/storage.js');
-    const current=validateManifest(await (await fetch('/release.json')).json());
-    const future=await (await fetch('/release.json?check=1',{cache:'no-store'})).json();
-    let rejected=false;
-    try { validateManifest(future); } catch { rejected=true; }
-    return [current.id,future.id,rejected];
-  });
-  assert.deepEqual(manifests,[base.id,'future-release',true]);
-  update=null;
-  const aborted=await page.evaluate(async()=>{
-    const {readState,writeState}=await import('/storage.js');
-    const original=IDBDatabase.prototype.transaction;
-    IDBDatabase.prototype.transaction=function(...args) {
-      const tx=original.apply(this,args);
-      queueMicrotask(()=>tx.abort());
-      return tx;
-    };
+  let app=await launchApp(cdp);await shot(app,'installed-window');
+  await close();await stop();page=await launch(profile,true,true);
+  const cold=await context.newCDPSession(page);app=await launchApp(cold);
+  assert.equal(server,null);
+  const connection=await app.evaluate(async()=>{
     try {
-      const results=await Promise.allSettled([readState('active'),writeState('abort-probe',1)]);
-      return results.map(result=>result.reason?.name);
-    } finally { IDBDatabase.prototype.transaction=original; }
+      await fetch('/release.json?check=1',{cache:'no-store',signal:AbortSignal.timeout(3000)});
+      return {reachable:true};
+    } catch {return {reachable:false,browserOnlineFlag:navigator.onLine};}
   });
-  assert.deepEqual(aborted,['AbortError','AbortError']);
-  const initial=await savedState(page);
-  assert.deepEqual(initial.dirs,[initial.dir]);
-  await page.evaluate(async()=>{
-    const s=await import('/storage.js');
-    const active=await s.activeRelease();
-    await s.downloadRelease(active);
-  });
-  assert.deepEqual(await savedState(page),initial);
-  // A tab holding the transfer lock cannot prevent another tab's offline startup.
-  await page.evaluate(()=>new Promise(resolve=>{
-    navigator.locks.request('atlas-download',()=>new Promise(unlock=>{window.releaseTestLock=unlock;resolve();}));
-  }));
-  await context.setOffline(true);
-  const sibling=await context.newPage();
-  try {
-    await sibling.goto(origin);
-    await sibling.locator('#map[data-ready=true]').waitFor();
-    assert.match(await sibling.locator('#storage-status').textContent(),/ready offline/);
-    assert.equal((await savedState(sibling)).dir,initial.dir);
-  } finally {
-    await sibling.close(); await context.setOffline(false); await page.evaluate(()=>window.releaseTestLock());
-  }
-  for (const [fault,message] of [['cancel','Download cancelled'],['quota','Not enough browser storage'],
-    ['corrupt','Content checksum failed'],['gzip','Invalid compressed package'],['closure','missing detail shard']]) {
-    console.error('Checking interrupted update:',fault);
-    await prepareUpdate(fault);
-    await page.reload();
-    await page.locator('#update-maps').waitFor();
-    await page.locator('#map[data-ready=true]').waitFor();
-    if (fault==='quota') await page.evaluate(()=>navigator.storage.estimate=async()=>({usage:0,quota:1}));
-    await page.locator('#update-maps').click();
-    if (fault==='cancel') {
-      await page.waitForFunction(()=>document.querySelector('#progress').value>0);
-      await page.locator('#cancel').click();
-    }
-    await page.locator('#storage-status').filter({hasText:message}).waitFor({timeout:90000});
-    assert.deepEqual(await savedState(page),initial,fault);
-  }
-  await prepareUpdate('complete');
-  await page.reload();
-  await page.locator('#update-maps').click();
-  await page.waitForFunction(id=>document.querySelector('#package-description').textContent.startsWith(id),update.id,{timeout:90000});
-  await page.locator('#map[data-ready=true]').waitFor();
-  const current=await savedState(page);
-  assert.equal(current.id,update.id); assert.notEqual(current.dir,initial.dir);
-  assert.deepEqual(current.dirs,[current.dir]); assert.deepEqual(current.completed,[current.dir]);
-  const pinned=await page.evaluate(async()=>(await (await fetch('/release.json')).json()).id);
-  assert.equal(pinned,base.id);
-  proof.offlineUpdate=['deduplication','concurrent cold boot','cancel','quota','checksum','gzip','catalog closure','atomic replacement'];
+  assert.equal(connection.reachable,false,'A network-only request reached the stopped origin');
+  await openRecord(app,rows.find(r=>r.layers.includes('events')).id);await shot(app,'installed-offline');
+  await cold.send('PWA.uninstall',{manifestId});await serve();
+  return {installed:true,standalone:true,coldOffline:true,networkOnlyProbe:connection,closedProxyAtStartup:true,platform:process.platform,state};
 }
-
-async function offlineDepth(page) {
-  await captureMap(page);
-  for (const id of ['hanson:Hanson2016_992','itinere:17122148:14767','orbis:route:987571','pleiades:423025']) {
-    await page.locator('#search').fill(id);
-    await page.locator('#search-results button[data-record="'+id+'"]').click();
-    await page.locator('#record-panel[data-loaded="'+id+'"]').waitFor();
-    assert(await page.locator('#record-content').getByText('Cite this source',{exact:true}).isVisible());
-    await page.locator('#close-record').click();
-  }
-  await page.locator('[value=natural]').check();
-  await page.evaluate(()=>{
-    const proto=pmtiles.PMTiles.prototype, original=proto.getZxy;
-    window.tileReads=[];
-    proto.getZxy=async function(z,x,y,...rest) {
-      const result=await original.call(this,z,x,y,...rest);
-      if (result?.data?.byteLength) window.tileReads.push([z,x,y]);
-      return result;
-    };
-    window.testMap.jumpTo({center:[-8.4,43.36],zoom:6});
-  });
-  await page.waitForFunction(()=>window.testMap.loaded() && window.tileReads.some(([z,x,y])=>z===6 && x===30 && y===23));
-  assert.equal(proof.offlinePackRequests,0);
-  proof.offlineColdBoot={sources:4,reliefTile:[6,30,23],packRequests:0};
-}
-
-async function damagedPackage(page) {
-  // Keep an active pointer and evict one real file while the network is unavailable.
-  await page.evaluate(async()=>{
-    const {activeRelease}=await import('/storage.js');
-    const active=await activeRelease();
-    const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('atlas-packages');
-    const dir=await root.getDirectoryHandle(active.storageDirectory);
-    await dir.removeEntry(active.files.find(f=>f.path.endsWith('catalog.json.gz')).sha256);
-  });
-  await page.reload();
-  await page.locator('#map-error').filter({hasText:'Browser storage was cleared or damaged'}).waitFor();
-  await page.locator('#remove').waitFor();
-  await serve(); await context.setOffline(false);
-  await page.locator('#remove').click();
-  await page.locator('#map[data-ready=true]').waitFor();
-  assert.equal(await page.locator('#remove').isVisible(),false);
-  assert.equal(await page.evaluate(async()=>(await import('/storage.js')).storedContentStatus()),false);
-  proof.damagedPackageRecovery=true;
-}
-
 
 try {
-  if (!publicURL) await serve();
-  let page = await launch(1440);
-  if (!publicURL) await shellTransitions();
-  await layout(page, 1440);
-  await observeMap(page);
-  if (process.env.ATLAS_SCREENSHOT) await page.screenshot({path:process.env.ATLAS_SCREENSHOT});
-  assert.deepEqual(await page.locator('[data-tier]').evaluateAll(ns=>ns.map(n=>n.value)),['auto','auto','auto']);
-  assert.equal(await page.locator('[data-sublayer=ports]').isChecked(),false);
-  console.error('Checking search and record details');
-  await foundation(page,true);
-  console.error('Checking layers and selection');
-  await interactions(page);
-  await guide(page,1440);
-  await controls(page);
-  {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await layout(page, 390);
-    await guide(page,390);
-    await mobilePicking(page);
-    await controls(page);
-  }
-  if (!publicURL) {
-    await page.setViewportSize({width:1440,height:880});
-    await staleDetail();
-    await savedTiers(page,true);
-    await page.evaluate(()=>navigator.storage.persist=async()=>false);
-    await page.locator('#download').click();
-    await page.locator('#storage-status').filter({hasText:'Both maps are verified and ready offline.'}).waitFor();
-    assert.match(await page.locator('#storage-status').textContent(),/evict offline data/);
-    console.error('Checking offline package lifecycle');
-    await updateLifecycle(page);
-    await context.close();
-    await new Promise(resolve => server.close(resolve));
-    server = null;
-    page = await launch(390, true);
-    await savedTiers(page,false);
-    await layout(page, 390);
-    await guide(page,390);
-    await offlineDepth(page);
-    await controls(page);
-    await page.getByRole('button', { name: 'Verify saved maps' }).click();
-    await page.getByText('All saved map files passed SHA-256 verification.').waitFor();
-    await page.locator('#remove').click();
-    await page.getByText('Saved maps removed. Reconnect and reload to use the full atlas.').waitFor();
-    const count = await page.evaluate(async () => {
-      const root = await navigator.storage.getDirectory();
-      const directory = await root.getDirectoryHandle('atlas-packages');
-      let entries = 0;
-      for await (const _ of directory.values()) entries++;
-      return entries;
+  await serve();
+  let page=await launch();await openAtlas(page);
+  await siteCases(page,{test,rows,edges,detail,fixture,release:base,shot});
+  await test('T-A5a',async()=>{
+    await savePack(page);assert.equal((await savedState(page)).id,base.id);await close();await stop();
+    page=await launch(profile,true);await openAtlas(page);
+    for (const box of await page.locator('[data-layer]').all()) {await box.uncheck();await box.check();}
+    for (const id of base.datasets.map(d=>d.id)) {
+      const r=rows.filter(r=>r.source===id).at(-1);await openRecord(page,r.id);
+    }
+    for (const archive of base.archives) {await page.locator('[data-archive="'+archive.id+'"]').click();await page.locator('#more-results').click();}
+    await openRecord(page,report.cases['T-A10'].observations.supporting);
+    assert(await page.locator('#record-content').getByText('Supporting dating events',{exact:true}).isVisible());
+    await page.locator('#close-record').click();await checkGuide(page);
+    assert.equal(await page.locator('#credits > li').count(),16);
+    const distant=rows.filter(r=>r.layers.includes('settlements') && r.bbox).sort((a,b)=>a.bbox[0]-b.bbox[0])[0];
+    await openRecord(page,distant.id);
+    await page.locator('#map canvas').press('ArrowRight');
+    for (const mode of ['simple','natural']) {
+      await page.locator('[value='+mode+']').check();
+      assert.equal(await page.locator('#map-error').isVisible(),false);
+    }
+    await shot(page,'cold-offline');await serve();await context.setOffline(false);
+    return {serverStopped:true,coldProfile:true,bytes:base.bytes,sources:12,archives:3,distantRecord:distant.id};
+  });
+  await test('T-A6',async()=>{
+    page=await rollback(page);await close();const migration=await migrations();await installingRace();
+    return {...migration,rollback:['cancel','quota','checksum','gzip','shard closure','schema 99'],repair:['equal length','missing','cancel','quota'],installingRace:true};
+  });
+  await test('T-A8',async()=>{
+    if (fixture) {
+      const second=path.join(work,'repeat');makeFixture(second);
+      const first=await hashes(dist);assert.deepEqual(await hashes(second),first);return {identicalFiles:Object.keys(first).length};
+    }
+    if (!await readFile(path.join(evidence,'determinism.json')).catch(()=>null)) {
+      const args=['-B',path.join(root,'tests/rebuild.py'),evidence];
+      if (process.env.ATLAS_FROZEN_PACK) args.push('--reference',process.env.ATLAS_FROZEN_PACK);
+      execFileSync(process.env.ATLAS_PYTHON || 'python3',args,{stdio:'inherit'});
+    }
+    const receipt=JSON.parse(await readFile(path.join(evidence,'determinism.json')));
+    assert.equal(receipt.release,base.id);assert.deepEqual(receipt.commands,{build:[0,0],verify:[0,0]});
+    const first=JSON.parse(await readFile(path.join(evidence,'offline-1-hashes.json')));
+    const second=JSON.parse(await readFile(path.join(evidence,'offline-2-hashes.json')));
+    assert.deepEqual(first,second);assert.deepEqual(await hashes(dist),second);
+    return receipt;
+  });
+  if (fixture && process.platform!=='darwin') {
+    report.cases['T-A5b']={status:'not applicable',platform:process.platform,reason:'Native installation is assessed on macOS.'};
+  } else {
+    await test('T-A5b',async()=>{
+      page=await launch(profile,false,true);await openAtlas(page);return installed(page);
     });
-    assert.equal(count, 0);
-    assert(await page.locator('input[value=natural]').isDisabled());
-    await serve(); await context.setOffline(false); update=null;
-    await page.reload(); await page.locator('#download').click();
-    await page.locator('#storage-status').filter({hasText:'Both maps are verified'}).waitFor({timeout:90000});
-    await context.setOffline(true);
-    await new Promise(resolve=>server.close(resolve)); server=null;
-    await damagedPackage(page);
-    await page.locator('#download').click();
-    await page.locator('#storage-status').filter({hasText:'Both maps are verified'}).waitFor({timeout:90000});
-    await page.reload(); await page.locator('#map[data-ready=true]').waitFor();
-    const peer=await context.newPage();
-    try {
-      await peer.goto(origin); await peer.locator('#map[data-ready=true]').waitFor();
-      await Promise.all([page.waitForNavigation(),peer.waitForNavigation(),page.locator('#remove').click()]);
-      for (const tab of [page,peer]) {
-        await tab.locator('#map[data-ready=true]').waitFor();
-        assert.equal(await tab.locator('#remove').isVisible(),false);
-      }
-      proof.onlineRemovalReloadedTabs=2;
-    } finally { await peer.close(); }
   }
-  assert.deepEqual([...external], []);
-  assert.deepEqual([...errors], []);
-  console.log(JSON.stringify({ site: origin, chromium:context.browser()?.version(), desktop: 'pass', narrow: 'pass',
-    offlineBrowserRestartWithServerStopped: publicURL ? undefined : 'pass', offlineTiersRetained:publicURL?undefined:{settlements:176,roads:1040,maritime:74,ports:294}, foundation:proof, externalRequests: 0, errors: 0 }));
+  assert.deepEqual(report.pageErrors,[]);assert.deepEqual(report.csp,[]);assert.deepEqual(report.consoleErrors,[]);assert.deepEqual(report.thirdParty,[]);
+  report.status='pass';
 } catch (error) {
-  const page=context?.pages()[0];
-  if (page) console.error('Atlas state on failure:',await page.evaluate(()=>({
-    online:navigator.onLine, storage:document.querySelector('#storage-status')?.textContent,
-    map:document.querySelector('#map-error')?.textContent, record:document.querySelector('#record-panel')?.dataset.loaded
-  })).catch(()=>null));
-  throw error;
+  report.status='fail';report.error=error.message;
+  const page=context?.pages().at(-1);
+  if (page) report.screenState=await page.evaluate(()=>({map:document.querySelector('#map-error')?.textContent,
+    storage:document.querySelector('#storage-status')?.textContent,record:document.querySelector('#record-panel')?.dataset.loaded})).catch(()=>null);
+  console.error(error);process.exitCode=1;
 } finally {
-  await context?.close();
-  if (server?.listening) await new Promise(resolve => server.close(resolve));
-  await rm(profile, { recursive: true, force: true });
+  await close();await stop();await save();await rm(work,{recursive:true,force:true});
 }

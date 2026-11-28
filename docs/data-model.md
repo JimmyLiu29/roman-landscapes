@@ -1,30 +1,9 @@
-# Data model
+## Atlas data model
 
-The release manifest records the bounding box, content version, active scope and dataset IDs. Every file in the pack has a byte length and SHA-256. The catalog covers 49,711 source-qualified records. Each record identifies its detail shard. The four datasets use 250 gzip-compressed JSON shards, with at most 200 records per shard.
+The v0.2 catalog contains 75,223 records from 16 active sources, including 23,385 economic evidence records and 324 historical events. Of 1,208 people, 414 have activity or event locations and 944 have biographical locations. The groups overlap by 150 people, leaving 794 with biographical locations only. The historical links reach 383 town nodes. The complete offline package occupies 57,448,450 bytes (54.8 MiB / 57.45 MB).
 
-| Layer group | Geometry sources | Record identity |
-|---|---|---|
-| Settlements | 1,388 Hanson points | Native city key; related workbook rows keep their original row numbers |
-| Terrestrial roads | 14,769 Itiner-e lines | Native InLine_FID; certainty and the temporary ferry flag are independent attributes |
-| Maritime routes | 584 route lines and 294 port points | Separate ORBIS route and site IDs; seven additional sites have no mapped point |
-| Gazetteer search | 32,665 representative points displayed on selection | Pleiades place ID; the 29,150 name rows retain their parent, native identifier and source row |
+The release manifest declares twelve catalog datasets, three archive registries and the byte length and SHA-256 digest of every package file. The remaining four source entries describe physical geography. Across 382 detail shards, source-qualified IDs identify records. A separate occurrence ID joins a record to a map layer. Layer-specific bounds let a person have two different geographic footprints.
 
-Each ORBIS route has separate source and target relations. Both are navigable in either direction. Hanson references point into the 47-row native bibliography where the source supports a match. Itiner-e details preserve the original XYZ geometry, coordinate system and attributes alongside geographic display lines and date uncertainty. Unknown dates and unlocated sites retain their source meanings. The reading view and original source fields are available separately.
+Each of the 23 rendering kinds defines a detail payload. Native fields preserve original values. Normalized dates distinguish uncertain bounds, source placeholders and stated precision. Relations have a direction, a role, a source and a textual basis. The 25,905 links include archive membership. Natural source order supports browsing without preferring mapped records.
 
-The browser registry maps release scope keys to layer groups, files, styles and legend entries. One maritime switch controls both sources. Map clicks use a five-pixel tolerance, deduplicate source-qualified IDs and offer overlapping records in layer-priority order. The selected overlay accepts point and line geometries, including multipart lines. Layer visibility and base-map mode are saved in IndexedDB. Search categories use the supplied category or record kind.
-
-The map reads Hanson’s native Barrington Atlas Rank (`rank`), ORBIS route type (`t`) and Itiner-e certainty (`certainty`, from `Segment_s`). Map filters leave the complete search index available. All three groups default to Auto by zoom.
-
-| Layer | Overview | Detail added on zooming in |
-|---|---|---|
-| Settlements | Ranks 1–2 (176) | Rank 3 at zoom 4.5 (992 total), then all 1,388 settlements at 5.6 |
-| Terrestrial roads | Certain and conjectured (13,992), including two temporary ferry connectors | All 14,769 segments at zoom 5.0 |
-| Maritime routes | Overseas, coastal and ferry (515) | All 584 routes at zoom 5.2, including 69 slowover routes |
-
-At overview scales, faint conjectured roads and thin, light-blue coastal routes show regional connections. Certain roads are dark brown. Open-sea crossings and ferries use blue dashes. Point radii, outlines, line widths and line opacity vary continuously between zoom stops. Each layer can be locked to a manual tier, including the 14 Rank 1 settlements and the 74 direct open-sea and ferry routes. The 294 ports start hidden. Manual choices and port visibility persist across sessions. Hover and direct selection use the same visible candidates, ordered by layer, city rank and point distance. Map and overlap selections preserve the view. Search and relation selections locate their destinations.
-
-## Planned v0.2 Schema Extensions
-
-Checkpoint 2 will separate an entity’s identity from its map occurrences so one person can appear in two layers. Archive-only groups will be able to omit geometry collections. Referenced gazetteer places without coordinates and records outside the study bounds will have archival views.
-
-Detail rendering will use source and kind. Dates will carry value, precision, calendar and qualifiers. Each group will declare its category filters, with versioned migrations for layer preferences in IndexedDB.
+Use `bin/acquire` (default `--scope all`) to verify the full inventory. Direct sources can be restored from their pinned URLs. Supply locked snapshots at the paths and SHA-256 digests in the source manifest. Two companion assets are tracked in the repository. Use `bin/acquire --scope foundation` for the direct foundation subset.

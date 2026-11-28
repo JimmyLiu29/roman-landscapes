@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#183d42">
-  <meta name="description" content="Explore Roman settlements, roads, maritime routes and ancient place names on two offline-capable maps.">
+  <meta name="description" content="Explore Roman towns, transport networks, economic evidence and historical lives on two offline maps.">
   <title>Roman Landscapes: An Interactive Atlas of Economy, Transport, and History</title>
   <link rel="icon" href="/icon-192.png"><link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/vendor/maplibre-gl/maplibre-gl.css">
@@ -16,7 +16,7 @@
         <h1>Roman Landscapes</h1>
         <p class="subtitle">Roman Landscapes: An Interactive Atlas of Economy, Transport, and History</p>
         <nav class="guide-buttons" aria-label="Atlas reading">
-          <button type="button" data-guide="datasets">Dataset Guide (5 Sources)</button>
+          <button type="button" data-guide="datasets">Dataset Guide</button>
           <button type="button" data-guide="methods">About &amp; Methods</button>
         </nav>
       </header>
@@ -29,9 +29,11 @@
       </section>
       <section id="foundation-controls" hidden>
         <fieldset id="atlas-layers"><legend>Map layers</legend></fieldset>
-        <label for="search">Find a place or route</label><input type="search" id="search" placeholder="Name, alias or record ID">
+        <fieldset id="archives"><legend>Archival datasets</legend></fieldset>
+        <label for="search">Search atlas records</label><input type="search" id="search" placeholder="Name, alias or record ID">
         <select id="search-source" aria-label="Data source"><option value="">All sources</option></select>
         <select id="search-category" aria-label="Category" hidden><option value="">All categories</option></select>
+        <div id="collection-notices" role="status"></div>
         <p id="search-status" role="status"></p><div id="search-results"></div><button id="more-results" hidden>More results</button>
         <section id="record-panel" hidden aria-label="Record details"><button id="close-record">Close record</button><div id="overlap-picker" hidden><p id="overlap-count"></p><div id="overlap-records" aria-labelledby="overlap-count"></div></div><div id="record-content"></div></section>
       </section>
@@ -70,33 +72,23 @@
 <dialog id="guide-dialog" aria-label="Atlas guide">
 <div class="guide-bar"><button type="button" id="guide-close" autofocus>Close guide</button></div>
 <article id="guide-methods" hidden>
-<h2>About &amp; Methodology</h2>
-<nav aria-label="Chapters"><a href="#atlas-about">About Roman Landscapes</a> <a href="#atlas-methods">Methodology</a></nav>
+<h2>About &amp; Methods</h2>
+<nav aria-label="Chapters"><a href="#methods-chapter-1">About Roman Landscapes</a> <a href="#methods-chapter-2">Reading evidence on a map</a> <a href="#methods-chapter-3">Sources and methods</a></nav>
 <div class="guide-text">
-<h3 id="atlas-about" tabindex="-1">About <em>Roman Landscapes</em></h3>
-<p><strong>Roman Landscapes: An Interactive Atlas of Economy, Transport, and History</strong> is an open educational and scholarly digital atlas of the Roman world. It brings together published geospatial and historical datasets into a single interactive map environment, allowing students, teachers, researchers, and general readers to explore how physical geography, urban networks, and transport corridors shaped the ancient Mediterranean and its surrounding provinces.</p>
-<p><strong>Project Attribution</strong><br />
-A student project by <strong>Jimmy Liu</strong>, developed with academic and technical guidance from <strong>Fang, Xinjie</strong> and <strong>Classical Cat Digital Humanities Lab</strong>.</p>
-<h3 id="atlas-methods" tabindex="-1">Core Methodological Principles</h3>
-<p>Ancient historical datasets are often scattered across specialized repositories, formatted in incompatible coordinate systems, or published as static spreadsheets that are difficult to read spatially. At the same time, putting ancient evidence on a digital map carries a classic methodological risk: <strong>making uncertain or incomplete evidence look more exact than it really is</strong>.</p>
-<p><em>Roman Landscapes</em> is built around four core rules of historical cartography and data stewardship:</p>
-<ol type="1">
-<li><strong>Source Fidelity Over Smooth Generalization</strong><br />
-Every imported record preserves its native source identifiers, original field values, chronological bounds, bibliography, and explicit uncertainty markers. Missing dates, unlocated sites, and tentative route reconstructions are displayed honestly rather than hidden or filled in by guesswork.</li>
-<li><strong>No Automatic Spatial Merging</strong><br />
-Ancient history relies on multiple independent catalogs that do not always agree on coordinates or site boundaries. Two records from different datasets are linked only when the underlying scholarly source supplies an explicit identifier or a documented correspondence. The atlas never merges cities, ports, or sites simply because their names look similar or their coordinates fall close to one another.</li>
-<li><strong>Models vs. Observed Evidence</strong><br />
-Archaeological and textual records of physical towns or road segments represent attested historical evidence (with varying degrees of certainty). By contrast, maritime shipping lanes represent structured network models of where ancient vessels could sail, not direct measurements of actual trade volume. The atlas keeps these evidentiary categories visually and conceptually distinct.</li>
-<li><strong>Self-Contained Reproducibility and Offline Access</strong><br />
-All map tiles, vector layers, search indexes, and record details are built deterministically from pinned dataset snapshots and served without external third-party map trackers or live commercial APIs. Users can cache the complete atlas in their browser for offline classroom or field use.</li>
-</ol>
+<h3 id="methods-chapter-1" tabindex="-1">About Roman Landscapes</h3>
+<p>Roman Landscapes is a student atlas by <strong>Jimmy Liu</strong>, with academic and technical guidance from <strong>Fang, Xinjie</strong> and <strong>Classical Cat Digital Humanities Lab</strong>. It brings settlement, transport, economic and historical sources into the same geographic frame.</p>
+<h3 id="methods-chapter-2" tabindex="-1">Reading evidence on a map</h3>
+<p>Look at the source, date bounds and position basis for each record. A documented collection location can anchor an archive even when the transactions themselves have no coordinates. Modeled sea lanes describe possible connections. The archaeological and written evidence retains its own units and level of certainty.</p>
+<h3 id="methods-chapter-3" tabindex="-1">Sources and methods</h3>
+<p>Cross-source links require a source identifier or documented correspondence. Native fields, bibliography and statement references can be inspected in the detail panel. Each offline release identifies its data by content digest so the complete map and documentation can be read without a connection.</p>
 </div>
 </article>
 <article id="guide-datasets" hidden>
-<h2>Guide to Base Geography &amp; Foundation Datasets (v0.1)</h2>
-<nav aria-label="Chapters"><a href="#atlas-base">Natural Earth</a> <a href="#atlas-cities">Hanson Cities</a> <a href="#atlas-roads">Itiner-e</a> <a href="#atlas-maritime">ORBIS</a> <a href="#atlas-places">Pleiades</a></nav>
+<h2>Dataset Guide</h2>
+<nav aria-label="Chapters"><a href="#datasets-chapter-1">1. Physical Geography Base Maps — <em>Natural Earth</em> (<code>10m</code> Physical Vectors &amp; Shaded Relief)</a> <a href="#datasets-chapter-2">2. Urban Settlements of the Roman World — <em>Oxford Hanson Cities Database</em> (<code>v1.0</code>, 2016)</a> <a href="#datasets-chapter-3">3. Terrestrial Road Networks — <em>Itiner-e: Roads of the Roman Empire</em> (<code>v1.3</code>, 2025)</a> <a href="#datasets-chapter-4">4. Maritime &amp; Ferry Network Model — <em>Stanford ORBIS</em> (<code>v2</code> Public Geometry)</a> <a href="#datasets-chapter-5">5. Ancient Place Directory &amp; Gazetteer — <em>Pleiades</em> (<code>v4.1</code>, 2025)</a> <a href="#datasets-chapter-6">6. Mining and metals</a> <a href="#datasets-chapter-7">7. Shipwrecks and cargo</a> <a href="#datasets-chapter-8">8. Amphorae and commodities</a> <a href="#datasets-chapter-9">9. Karanis tax rolls</a> <a href="#datasets-chapter-10">10. Olive and wine presses</a> <a href="#datasets-chapter-11">11. Stone quarries</a> <a href="#datasets-chapter-12">12. Water technologies</a> <a href="#datasets-chapter-13">13. Historical events and people</a></nav>
 <div class="guide-text">
-<h3 id="atlas-base" tabindex="-1">1. Physical Geography Base Maps — <em>Natural Earth</em> (<code>10m</code> Physical Vectors &amp; Shaded Relief)</h3>
+<p>The v0.2 catalog contains 75,223 records from 16 active sources, including 23,385 economic evidence records and 324 historical events. Of 1,208 people, 414 have activity or event locations and 944 have biographical locations. The groups overlap by 150 people, leaving 794 with biographical locations only. The historical links reach 383 town nodes. The complete offline package occupies 57,448,450 bytes (54.8 MiB / 57.45 MB).</p>
+<h3 id="datasets-chapter-1" tabindex="-1">1. Physical Geography Base Maps — <em>Natural Earth</em> (<code>10m</code> Physical Vectors &amp; Shaded Relief)</h3>
 <h4>What Is This Dataset?</h4>
 <p>Before we can understand where Roman roads ran or why cities grew in particular valleys and bays, we need a clear picture of the physical landscape—mountains, plains, coastlines, major river systems, and inland lakes. <strong>Natural Earth</strong> is a public-domain cartographic dataset supported by the North American Cartographic Information Society (NACIS). In <em>Roman Landscapes</em>, Natural Earth <code>1:10,000,000</code> (<code>10m</code>) physical vector data and raster shaded relief (<code>SR_LR</code>) provide the geographic canvas across the entire study area (<code>17°W</code> to <code>55°E</code> longitude, <code>15°N</code> to <code>63°N</code> latitude), spanning from Britain and the Atlantic coast of Iberia to Mesopotamia and the Nile Valley.</p>
 <h4>What You Can See on the Map</h4>
@@ -110,13 +102,13 @@ All map tiles, vector layers, search indexes, and record details are built deter
 <li><strong>Modern Physical Reference, Not Ancient Coastline Reconstruction</strong>: Natural Earth depicts modern physical geography. Over the past two millennia, river deltas have silted up (for example, around Ostia at the mouth of the Tiber, or Miletus and Ephesus in western Asia Minor), and local coastlines or marshlands have shifted. The base map serves as a consistent physical reference frame rather than a paleogeographic reconstruction of antiquity.</li>
 <li><strong>Exclusion of Modern Artificial Waterbodies</strong>: Modern man-made features classified in Natural Earth as <code>Canal</code> or <code>Reservoir</code> (such as modern hydroelectric reservoirs on the Nile or Euphrates) are systematically filtered out within the buffered physical map (27°W–65°E, 8°N–67°N) (<code>45</code> lake polygons and <code>2</code> river segments excluded) so that modern engineering projects do not distort the ancient landscape.</li>
 </ul>
-<hr />
-<h3 id="atlas-cities" tabindex="-1">2. Urban Settlements of the Roman World — <em>Oxford Hanson Cities Database</em> (<code>v1.0</code>, 2016)</h3>
+<hr>
+<h3 id="datasets-chapter-2" tabindex="-1">2. Urban Settlements of the Roman World — <em>Oxford Hanson Cities Database</em> (<code>v1.0</code>, 2016)</h3>
 <h4>What Is This Dataset?</h4>
 <p>Compiled by <strong>J. W. Hanson</strong> for the <strong>Oxford Roman Economy Project (OxREP)</strong> and published alongside his monograph <em>An Urban Geography of the Roman World, 100 BC to AD 300</em> (Archaeopress, 2016), this dataset is a catalog of urban settlements across the Roman Empire during the Late Republic and Principate.</p>
 <p>Why do historians care so much about cities? In the Roman world, cities (<em>civitates</em>, <em>coloniae</em>, <em>municipia</em>, and Greek <em>poleis</em>) were the primary engines of administration, taxation, monumental architecture, and regional market exchange. Mapping where cities were concentrated—and how large they grew—reveals the stark regional diversity between heavily urbanized zones (such as central Italy, Baetica, Africa Proconsularis, and western Asia Minor) and more sparsely urbanized frontier provinces.</p>
 <h4>What Is Included in <em>Roman Landscapes</em></h4>
-<p>The atlas integrates all <strong>1,388 urban settlement records</strong> from Hanson's database, joined with four related scholarly subtables from the original workbook:</p>
+<p>The atlas integrates all <strong>1,388 urban settlement records</strong> from Hanson&#x27;s database, joined with four related scholarly subtables from the original workbook:</p>
 <ul>
 <li><strong>Settlement Core (<code>1,388</code> cities)</strong>: Ancient name, modern site name, Roman province, modern country, point coordinates, and chronological bounds.</li>
 <li><strong>Walled &amp; Built-Up Areas (<code>885</code> area estimates)</strong>: Measured or estimated urban surface area in hectares—a crucial proxy used by economic historians to estimate urban population sizes.</li>
@@ -126,11 +118,11 @@ All map tiles, vector layers, search indexes, and record details are built deter
 </ul>
 <h4>Methodological &amp; Technical Notes</h4>
 <ul>
-<li><strong>Urban Threshold</strong>: Hanson's catalog focuses on settlements that functioned as urban centers between <code>100 BCE</code> and <code>300 CE</code>. It is not a census of every rural village (<em>vicus</em>), military fort (<em>castellum</em>), or private villa in the Roman Empire.</li>
+<li><strong>Urban Threshold</strong>: Hanson&#x27;s catalog focuses on settlements that functioned as urban centers between <code>100 BCE</code> and <code>300 CE</code>. It is not a census of every rural village (<em>vicus</em>), military fort (<em>castellum</em>), or private villa in the Roman Empire.</li>
 <li><strong>Preservation of Raw Subtable Structure</strong>: Some cities have multiple area estimates or multiple monument entries reflecting different construction phases or scholarly sources. These rows are preserved intact rather than artificially deduplicated. One monument row in the original workbook whose key does not match a city record is retained in an inspectable <code>hanson:unmatched</code> record so that zero source data is silently dropped.</li>
 </ul>
-<hr />
-<h3 id="atlas-roads" tabindex="-1">3. Terrestrial Road Networks — <em>Itiner-e: Roads of the Roman Empire</em> (<code>v1.3</code>, 2025)</h3>
+<hr>
+<h3 id="datasets-chapter-3" tabindex="-1">3. Terrestrial Road Networks — <em>Itiner-e: Roads of the Roman Empire</em> (<code>v1.3</code>, 2025)</h3>
 <h4>What Is This Dataset?</h4>
 <p>Roman roads (<em>viae</em>) were the arteries of imperial governance, military deployment, postal communication (<em>cursus publicus</em>), and overland commerce. Published in <em>Scientific Data</em> (Nature Portfolio, 2025) by <strong>Pau de Soto, Adam Pažout, Tom Brughmans, and colleagues</strong> (Zenodo <code>17122148</code>, <code>v1.3</code>), <strong>Itiner-e</strong> is an open-access digital dataset of terrestrial road networks across the Roman Empire, synthesizing decades of archaeological surveys, milestone (<em>miliaria</em>) inscriptions, ancient itineraries (such as the <em>Antonine Itinerary</em> and the <em>Tabula Peutingeriana</em>), and regional historical maps.</p>
 <h4>What Is Included in <em>Roman Landscapes</em></h4>
@@ -145,10 +137,10 @@ All map tiles, vector layers, search indexes, and record details are built deter
 <h4>Methodological &amp; Technical Notes</h4>
 <ul>
 <li><strong>Coordinate System Normalization</strong>: Although the accompanying publication describes the data in standard geographic coordinates (<code>EPSG:4326</code>), the raw GeoJSON payload in release <code>v1.3</code> is encoded in projected World Mercator meters (<code>EPSG:3395</code>) with 3D <code>XYZ</code> coordinates. Our build pipeline transforms the horizontal geometry to <code>EPSG:4326</code> for accurate web mapping and preserves the original XYZ vertices and CRS under Original source fields.</li>
-<li><strong>Sentinel Dates</strong>: In the upstream dataset, numeric values of <code>0</code> and <code>9999</code> in the <code>Lower_Date</code> and <code>Upper_Date</code> columns are used as placeholder sentinels meaning "date unspecified / unknown," not the years <code>0</code> or <code>9999 CE</code>. The atlas normalizes these sentinel bounds to <code>unknown</code> in human-readable summaries while keeping the raw fields visible for inspection. The field definitions also mark zero in either error margin as uncertain.</li>
+<li><strong>Sentinel Dates</strong>: In the upstream dataset, numeric values of <code>0</code> and <code>9999</code> in the <code>Lower_Date</code> and <code>Upper_Date</code> columns are used as placeholder sentinels meaning &quot;date unspecified / unknown,&quot; not the years <code>0</code> or year 9999. The atlas normalizes these sentinel bounds to <code>unknown</code> in human-readable summaries while keeping the raw fields visible for inspection. The field definitions also mark zero in either error margin as uncertain.</li>
 </ul>
-<hr />
-<h3 id="atlas-maritime" tabindex="-1">4. Maritime &amp; Ferry Network Model — <em>Stanford ORBIS</em> (<code>v2</code> Public Geometry)</h3>
+<hr>
+<h3 id="datasets-chapter-4" tabindex="-1">4. Maritime &amp; Ferry Network Model — <em>Stanford ORBIS</em> (<code>v2</code> Public Geometry)</h3>
 <h4>What Is This Dataset?</h4>
 <p>In the ancient world, moving heavy bulk goods—such as grain, wine, olive oil, marble, and timber—by sea was dramatically cheaper and faster than hauling them overland by ox-cart. The Mediterranean (<em>Mare Nostrum</em>), the Black Sea, and the Atlantic coastal waters formed the true highway system of the Roman economy.</p>
 <p>Created by <strong>Walter Scheidel, Elijah Meeks, and colleagues</strong> at Stanford University, <strong>ORBIS: The Stanford Geospatial Network Model of the Roman World</strong> reconstructed the time and financial cost of travel across the Roman Empire around <code>200 CE</code>. In <em>Roman Landscapes</em>, we integrate the maritime and ferry route geometries from the public ORBIS <code>v2</code> repository (<code>sul-cidr/orbis_pub</code>).</p>
@@ -164,15 +156,15 @@ All map tiles, vector layers, search indexes, and record details are built deter
 <ul>
 <li><strong>A Network Model, Not Observed Trade Flows</strong>: Unlike a physical Roman road excavated by archaeologists, an ancient sea lane leaves no track on the water. The lines in the ORBIS maritime layer represent <strong>modeled sailing corridors</strong> used by historians to study connectivity and travel times. A dense cluster of lines into a port indicates high network connectivity in the Stanford model—<strong>not</strong> a direct measurement of how many ships or tons of cargo actually arrived there in a given year.</li>
 <li><strong>Mode Node Resolution &amp; Unresolved Endpoints</strong>: Following the upstream <code>orbis.js</code> specification, six-digit mode-specific node identifiers in the route table are stripped of their leading mode digit to resolve to five-digit site records in <code>o_sites.csv</code>, creating navigable links between shipping lanes and their origin/destination ports. Seven resolved five-digit site identifiers (<code>50457</code>, <code>50522</code>, <code>50572</code>, <code>50786</code>, <code>50789</code>, <code>50790</code>, and <code>50792</code>) referenced by route geometries do not appear in the upstream <code>o_sites.csv</code> table; they are preserved as explicit unresolved place records rather than assigned invented coordinates.</li>
-<li><strong>Why Only Maritime Routes from ORBIS?</strong>: ORBIS also contains schematic overland and river links, but because <em>Itiner-e</em> provides a much higher-resolution archaeological road network (<code>14,769</code> segments vs. ORBIS's <code>628</code> schematic road edges), <em>Roman Landscapes</em> uses Itiner-e for land transport and ORBIS specifically for maritime connectivity.</li>
+<li><strong>Why Only Maritime Routes from ORBIS?</strong>: ORBIS also contains schematic overland and river links, but because <em>Itiner-e</em> provides a much higher-resolution archaeological road network (<code>14,769</code> segments vs. ORBIS&#x27;s <code>628</code> schematic road edges), <em>Roman Landscapes</em> uses Itiner-e for land transport and ORBIS specifically for maritime connectivity.</li>
 </ul>
-<hr />
-<h3 id="atlas-places" tabindex="-1">5. Ancient Place Directory &amp; Gazetteer — <em>Pleiades</em> (<code>v4.1</code>, 2025)</h3>
+<hr>
+<h3 id="datasets-chapter-5" tabindex="-1">5. Ancient Place Directory &amp; Gazetteer — <em>Pleiades</em> (<code>v4.1</code>, 2025)</h3>
 <h4>What Is This Dataset?</h4>
 <p>Anyone studying the ancient world quickly runs into the problem of names: a single settlement might be known by a Greek name, several Latin spelling variants, a Late Antique title, and a modern Arabic, Italian, Turkish, or French toponym (for example, <em>Roma</em> / <em>Rhome</em>, <em>Byzantium</em> / <em>Constantinopolis</em> / <em>Istanbul</em>, or <em>Lugdunum</em> / <em>Lyon</em>).</p>
 <p><strong>Pleiades</strong>—jointly supported by the Institute for the Study of the Ancient World (ISAW) at New York University and the Ancient World Mapping Center (AWMC) at UNC Chapel Hill—is a community gazetteer of ancient places. Derived originally from the <em>Barrington Atlas of the Greek and Roman World</em> (edited by Richard J. A. Talbert, 2000) and continuously expanded by scholars worldwide, Pleiades assigns each ancient place a permanent, stable numeric identifier (a Pleiades URI/ID) and catalogs its attested names, chronological periods, and coordinate precision.</p>
 <h4>What Is Included in <em>Roman Landscapes</em></h4>
-<p>The <code>v0.1</code> foundation release incorporates the <strong>Pleiades <code>v4.1</code></strong> snapshot (<code>2025-05-28</code>), filtered to our geographic bounding box (<code>17°W–55°E, 15°N–63°N</code>):</p>
+<p>The atlas incorporates the <strong>Pleiades <code>v4.1</code></strong> snapshot (<code>2025-05-28</code>), filtered to the geographic bounding box (<code>17°W–55°E, 15°N–63°N</code>):</p>
 <ul>
 <li><strong>Regional Gazetteer Places (<code>32,665</code> located places)</strong>: Includes settlements, sanctuaries, forts, bridges, mines, battlefields, islands, and geographic features with representative coordinates inside the map bounds.</li>
 <li><strong>Attested Names &amp; Variants (<code>29,150</code> joined name records)</strong>: Historical spellings, ancient Greek and Latin transliterations, and modern place names linked to their parent Pleiades place records (preserving all distinct attested forms even where upstream rows share a URI).</li>
@@ -180,8 +172,35 @@ All map tiles, vector layers, search indexes, and record details are built deter
 <h4>How It Functions in the Atlas</h4>
 <ul>
 <li><strong>Searchable Gazetteer Backbone (Not a Cluttered Permanent Overlay)</strong>: Turning on 32,665 points at once would turn the map into an unreadable solid block of ink. Instead, Pleiades serves as a <strong>searchable gazetteer directory and cross-reference anchor</strong>. You can search for any ancient name, variant spelling (such as <code>Roma</code> or <code>Rhome</code>), or Pleiades ID in the search box; selecting a Pleiades record flies the map to its representative point, highlights its location, and displays its full provenance and alias list.</li>
-<li><strong>Disciplined Cross-Dataset Linking</strong>: In <em>Roman Landscapes</em>, Pleiades IDs act as an explicit bridge only where a dataset natively supplies a Pleiades reference or a documented scholarly crosswalk exists. We never force automatic "nearest-neighbor" joins between Hanson cities, Itiner-e road segments, and Pleiades entries based merely on coordinate proximity.</li>
+<li><strong>Disciplined Cross-Dataset Linking</strong>: In <em>Roman Landscapes</em>, Pleiades IDs act as an explicit bridge only where a dataset natively supplies a Pleiades reference or a documented scholarly crosswalk exists. We never force automatic &quot;nearest-neighbor&quot; joins between Hanson cities, Itiner-e road segments, and Pleiades entries based merely on coordinate proximity.</li>
 </ul>
+<p>One additional source-identified place, <code>pleiades:114765</code>, is available from linked economic records. It has no representative coordinate.</p>
+<hr>
+<h3 id="datasets-chapter-6" tabindex="-1">6. Mining and metals</h3>
+<p>The mining inventory preserves 1,399 site records. Search by mineID, Domergue number or Romanian RAN identifier. Read the opening and closing bounds separately. A missing coordinate leaves the record available in search.</p>
+<hr>
+<h3 id="datasets-chapter-7" tabindex="-1">7. Shipwrecks and cargo</h3>
+<p>The 1,818 wreck records preserve approximate locations and the original wreck, Parker and Strauss identifiers. Cargo is attached through two different keys. The wreck records contain 887 amphora rows and 2,544 site objects. Three unassigned objects remain together in a source note. Two shifted spreadsheet rows include the normalized fields alongside their original values.</p>
+<hr>
+<h3 id="datasets-chapter-8" tabindex="-1">8. Amphorae and commodities</h3>
+<p>RAAD records 1,469 observations in 79 assemblages. Each observation comes from a type-by-site matrix cell. An assemblage total and its component observations describe the same material. Follow explicit place IDs and the native type concordance to inspect these relationships.</p>
+<hr>
+<h3 id="datasets-chapter-9" tabindex="-1">9. Karanis tax rolls</h3>
+<p>Browse 17,053 transactions in source order. A single collection anchor links the archive to Karanis. The archive location supplies no individual transaction coordinate. P.Mich. and line identify document locations. The two corrected drachma columns remain distinct. Three regnal-year cells contain the spreadsheet value 42339.</p>
+<hr>
+<h3 id="datasets-chapter-10" tabindex="-1">10. Olive and wine presses</h3>
+<p>The 232 grouped records represent 760 presses. The press count measures installations reported within groups. Locations and date ranges retain source uncertainty, including unspecified bounds.</p>
+<hr>
+<h3 id="datasets-chapter-11" tabindex="-1">11. Stone quarries</h3>
+<p>Browse 792 quarry records by source order, site, material or province. The retained table supplies neither coordinates nor external place identifiers. A matching place name alone cannot locate a quarry.</p>
+<hr>
+<h3 id="datasets-chapter-12" tabindex="-1">12. Water technologies</h3>
+<p>The 622 documentary references preserve document and line locators. Twenty-five additional document place and area records are searchable through source links. Question marks in the Greek word column are already present in the source.</p>
+<hr>
+<h3 id="datasets-chapter-13" tabindex="-1">13. Historical events and people</h3>
+<p>Wikidata evidence connects events and people to towns through named statements, revision IDs, roles and references. A person may appear in both map layers. Open a supporting dating event to inspect the associated claim and date statements, including events outside the mapped selection.</p>
+<h4>Scope of interpretation</h4>
+<p>Individual finds, documentary references, modeled routes and historical associations measure different things. Compare their locations and dates within the limits stated for each source.</p>
 </div>
 </article>
 </dialog>

@@ -68,10 +68,15 @@ def spatial(layer, geometry):
 
 
 def verify(out):
+    assert {p.name for p in out.iterdir()} == {'release.json','economy-report.json','history-report.json','packs'}
+    reports = {name: read(out/(name+'-report.json')) for name in ('economy','history')}
+    return verify_pack(out, reports)
+
+
+def verify_pack(out, reports=None):
     release = read(out/'release.json')
     v = release['id']
     assert re.fullmatch('atlas-[0-9a-f]{16}',v) and release['schema'] == 1 and release['app_schema'] == 2
-    assert {p.name for p in out.iterdir()} == {'release.json','economy-report.json','history-report.json','packs'}
     assert [p.name for p in (out/'packs').iterdir()] == [v]
     pack = out/'packs'/v
     files = []
@@ -179,7 +184,7 @@ def verify(out):
             check_dates(d.get('dates', []))
             for e in d.get('dated_supporting_events', []):
                 check_dates(e['dates'])
-    accounts.finish({name: read(out/(name+'-report.json')) for name in ('economy','history')}, sources)
+    accounts.finish(reports, sources)
     assert not features and notices['water_lost_greek']==622 and notices['shipwrecks_approximate_coords']==1818
     edges = read(pack/'relations.json.gz')
     assert edges == sorted(edges,key=lambda e:(GROUPS.index(e['group']),e['from'],e['role'],e['to'],e['basis']))

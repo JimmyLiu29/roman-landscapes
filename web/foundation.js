@@ -1,7 +1,7 @@
 import { searchIndex } from './search.js';
 import { element, renderDetail } from './details.js';
 
-import { registry } from './layers.js';
+import { economyColors, registry } from './layers.js';
 
 const $=selector=>document.querySelector(selector);
 const empty={type:'FeatureCollection',features:[]};
@@ -11,42 +11,33 @@ export function relationIndex(edges,byID) {
   for (const edge of edges) {
     if (!byID.has(edge.from)||!byID.has(edge.to)) continue;
     for (const [id,other] of [[edge.from,edge.to],[edge.to,edge.from]]) {
+      if (id===edge.to && edge.group==='archive_member') continue;
       if (!neighbors.has(id)) neighbors.set(id,[]);
-      neighbors.get(id).push({other:byID.get(other),role:edge.role,basis:edge.basis,reverse:id===edge.to});
+      neighbors.get(id).push({other:byID.get(other),group:edge.group,source:edge.source,role:edge.role,basis:edge.basis,reverse:id===edge.to});
     }
   }
   return neighbors;
 }
 
 export async function mountFoundation(map,release,load,preferences={},persist=()=>{},sourcesById=new Map(),reloadAtlas) {
-  const {datasets,groups}=registry(release);
+  const {datasets,groups,archives}=registry(release);
   if (!datasets.length) return;
   const sources=new Map(datasets.map(d=>[d.id,d.label]));
   const files=groups.flatMap(g=>g.sources);
   const [catalog,edges,...collections]=await Promise.all(['catalog.json.gz','relations.json.gz',
     ...files.map(file=>file.id+'.geojson.gz')].map(load));
   const records=catalog.records.filter(r=>sources.has(r.source));
-  const byID=new Map(records.map(r=>[r.id,r])), index=searchIndex(records);
+  const byID=new Map(records.map(r=>[r.id,r])), index=searchIndex(records,archives);
   const neighbors=relationIndex(edges,byID);
   const contents=new Map(files.map((file,i)=>[file.id,collections[i]]));
-  const styles=files.flatMap(file=>file.styles.map(style=>({...style,source:file.id})));
+  const styles=files.flatMap(file=>file.styles.map(style=>({...style,source:file.id,drawOrder:file.drawOrder})));
   const sourceGroup=new Map(groups.flatMap(group=>group.sources.map(source=>[source.id,group])));
-  // Earlier saved packs already contain these exact native fields in their offline detail shards.
-  for (const [layer,field,native] of [['settlements','rank','Barrington Atlas Rank'],['maritime','t','t']]) {
-    const missing=new Map();
-    for(const {properties} of contents.get(layer)?.features || []) {
-      if (field in properties) continue;
-      const name=byID.get(properties.id).detail;
-      if (!missing.has(name)) missing.set(name,[]);
-      missing.get(name).push(properties);
-    }
-    for(const [name,items] of missing) {
-      const shard=await load(name);
-      for(const props of items) props[field]=shard[props.id].native[native];
-    }
+  const attributes=new Map(collections.flatMap(fc=>fc.features.map(f=>[f.properties.occurrence_id,f.properties])));
+  const state={...preferences,state_schema:2,tiers:{...preferences?.tiers},
+    categories:{economy:preferences?.state_schema===2 ? preferences.categories?.economy || '' : ''}};
+  for (const g of groups) {
+    state[g.id]=(!g.defaultVisible && preferences?.state_schema!==2) ? false : preferences?.[g.id] ?? g.defaultVisible;
   }
-  const attributes=new Map(collections.flatMap(fc=>fc.features.map(f=>[f.properties.id,f.properties])));
-  const state={...preferences,tiers:{...preferences?.tiers}};
   if (state.tiers.maritime==='primary') state.tiers.maritime='overseas-ferry';
   for(const g of groups.filter(g=>g.tier)) {
     if(!g.tier.options.some(o=>o.id===state.tiers[g.id])) state.tiers[g.id]=g.tier.initial;
@@ -62,7 +53,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   }
   function allowed(layer,props) {
     const group=sourceGroup.get(layer);
-    if (!visible(layer) || (category && group?.categoryFilter && props?.category!==category)) return false;
+    if (!visible(layer) || (state.categories[group?.id] && props?.category!==state.categories[group.id])) return false;
     const values=currentTier.get(layer)?.values;
     return !values || values.includes(props?.[group.tier.field]);
   }
@@ -70,14 +61,20 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   const picker=$('#overlap-picker'), choices=$('#overlap-records');
   let highlighted=null;
   function highlight() {
-    const shown=selected?.geometry;
+    const layers=selected?.record.layers || [];
+    const visibleLayers=layers.filter(layer=>allowed(layer,attributes.get(selected.record.id+'#'+layer)));
+    const shownLayers=visibleLayers.length ? visibleLayers : layers;
+    const noticeHidden=!layers.length || Boolean(visibleLayers.length);
     const banner=$('#selection-notice');
-    if (banner) banner.hidden=!shown || !selected.record.layer || allowed(selected.record.layer,attributes.get(selected.record.id));
-    const id=shown ? selected.record.id : null;
-    if (id===highlighted) return;
-    highlighted=id;
-    map.getSource('selected-record').setData(shown
-      ? {type:'Feature',properties:{id:selected.record.id},geometry:selected.geometry} : empty);
+    if (banner) banner.hidden=noticeHidden;
+    const key=selected ? [selected.record.id,shownLayers.join(','),noticeHidden].join('|') : '';
+    if (key===highlighted) return;
+    highlighted=key;
+    const geometries=shownLayers.map(layer=>selected.detail.occurrences[layer].geometry);
+    if (!geometries.length && selected?.detail.geometry_status==='selected_only') geometries.push(selected.detail.geometry);
+    map.getSource('selected-record').setData({type:'FeatureCollection',features:geometries.map(geometry=>({
+      type:'Feature',properties:{id:selected.record.id},geometry
+    }))});
   }
   function revealPanel() {
     if (matchMedia('(max-width:740px)').matches) $('.map-panel').scrollIntoView({block:'start'});
@@ -85,12 +82,12 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   }
   function showPicker(reveal=false) {
     const focus=choices.contains(document.activeElement)?document.activeElement.dataset.record:null;
-    const hits=overlap.filter(record=>allowed(record.layer,attributes.get(record.id)));
+    const hits=overlap.filter(hit=>allowed(hit.layer,hit.props) || hit.record.layers.some(l=>allowed(l,attributes.get(hit.record.id+'#'+l))));
     picker.hidden=hits.length<2;
     choices.replaceChildren();
     if (picker.hidden) return;
     $('#overlap-count').textContent=hits.length+' overlapping records at this location';
-    for (const record of hits) {
+    for (const {record} of hits) {
       const button=element('button',record.label);
       button.dataset.record=record.id;
       button.append(element('small',sources.get(record.source)+' · '+(record.category || record.kind)));
@@ -102,10 +99,10 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     if (reveal) revealPanel();
   }
   for (const file of files) map.addSource(file.id,{type:'geojson',data:contents.get(file.id),
-    attribution:element('span',sources.get(sourceGroup.get(file.id).scope)).outerHTML});
+    promoteId:'occurrence_id',attribution:sourceGroup.get(file.id).attribution});
   // Draw point symbols above linework; picking has a separate explicit priority.
-  for (const style of styles.toSorted((a,b)=>b.priority-a.priority)) {
-    const {priority,...spec}=style;
+  for (const style of styles.toSorted((a,b)=>a.drawOrder-b.drawOrder)) {
+    const {priority,drawOrder,...spec}=style;
     map.addLayer({...spec,layout:{...spec.layout,visibility:visible(style.source)?'visible':'none'}});
   }
   map.addSource('selected-record',{type:'geojson',data:empty});
@@ -136,7 +133,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     for (const style of styles) {
       const group=sourceGroup.get(style.source);
       const choice=currentTier.get(style.source);
-      const categoryValue=group.categoryFilter?category:'';
+      const categoryValue=state.categories[group.id] || '';
       const visibility=visible(style.source)?'visible':'none';
       const previous=applied.get(style.id);
       if (!previous || previous.choice!==choice || previous.categoryValue!==categoryValue) {
@@ -166,6 +163,14 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     $('#layer-legend').append(legend);
     const ui={input,count,legend,keys}; controls.set(group.id,ui);
     input.onchange=()=>{state[group.id]=input.checked;save();};
+    if (group.id==='economy') {
+      const select=element('select'); select.id='economy-category';
+      select.setAttribute('aria-label','Economic evidence category');
+      select.add(new Option('All economic evidence',''));
+      for (const name of Object.keys(economyColors)) select.add(new Option(name,name));
+      select.value=state.categories.economy; row.append(select); ui.select=select;
+      select.onchange=()=>{state.categories.economy=select.value; save();};
+    }
     if(group.tier) {
       const select=element('select'); select.dataset.tier=group.id;
       select.setAttribute('aria-label',group.title+' detail');
@@ -197,19 +202,32 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     const body=$('#record-content'); body.replaceChildren(element('p','Loading record…'));
     selected=null; highlight();
     try {
-      if (!cache.has(record.detail)) {
-        cache.set(record.detail,load(record.detail));
-        if (cache.size>6) cache.delete(cache.keys().next().value);
-      }
+      const name=record.detail;
+      const promise=cache.get(name) || load(name);
+      cache.delete(name); cache.set(name,promise);
+      const historical=[...cache.keys()].filter(key=>key.startsWith('details-wikidata-history-'));
+      if (historical.length>2) cache.delete(historical[0]);
+      if (cache.size>6) cache.delete(cache.keys().next().value);
       let shard;
-      try { shard=await cache.get(record.detail); } catch (error) {cache.delete(record.detail); throw error;}
+      try { shard=await promise; }
+      catch (error) { if (cache.get(name)===promise) cache.delete(name); throw error; }
       if (turn!==generation) return;
       const detail=shard[id];
       const banner=element('p',"This record's layer or detail filter is currently hidden; the selected geometry is highlighted for inspection.");
       banner.id='selection-notice'; banner.hidden=true;
-      body.replaceChildren(banner,renderDetail(record,detail,neighbors.get(id)||[],(other,row)=>select(other,row,'relation'),focusRow,sourcesById));
-      selected={record,geometry:detail.geometry}; highlight();
-      if (locate && record.bbox) map.fitBounds([[record.bbox[0],record.bbox[1]],[record.bbox[2],record.bbox[3]]],{maxZoom:6,padding:40,duration:0});
+      body.replaceChildren(banner,renderDetail(record,detail,neighbors.get(id)||[],(other,row)=>select(other,row,'relation'),focusRow,sourcesById,browse,archives));
+      selected={record,detail}; highlight();
+      if (locate) {
+        const boxes=record.layers.filter(l=>allowed(l,attributes.get(id+'#'+l))).map(l=>record.layer_bboxes?.[l]).filter(Boolean);
+        let bounds=record.bbox;
+        if (boxes.length) bounds=[0,1,2,3].map((i)=>(i<2?Math.min:Math.max)(...boxes.map(box=>box[i])));
+        if (!bounds && detail.geometry) {
+          const coords=detail.geometry.type==='Point' ? [detail.geometry.coordinates] :
+            detail.geometry.type==='MultiLineString' ? detail.geometry.coordinates.flat() : detail.geometry.coordinates;
+          bounds=[0,1,0,1].map((axis,i)=>(i<2?Math.min:Math.max)(...coords.map(point=>point[axis])));
+        }
+        if (bounds) map.fitBounds([[bounds[0],bounds[1]],[bounds[2],bounds[3]]],{maxZoom:6,padding:40,duration:0});
+      }
       panel.dataset.loaded=id;
       if (focusRow) body.querySelector('.selected-reference')?.focus();
     } catch (error) {
@@ -234,7 +252,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     const first=shown;
     for (const {record} of hits.slice(shown,shown+25)) {
       const button=element('button',record.label.replace(/\s+/g,' ').trim());
-      const certainty=attributes.get(record.id)?.certainty;
+      const certainty=attributes.get(record.id+'#roads')?.certainty;
       const suffix=record.source==='itinere' && certainty?' · '+certainty+' · #'+record.id.split(':').at(-1):'';
       button.append(element('small',sources.get(record.source)+suffix));
       button.dataset.record=record.id; button.onclick=()=>select(record.id);
@@ -243,7 +261,21 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     shown+=25; $('#more-results').hidden=shown>=hits.length;
     if (focusMore && $('#more-results').hidden) $('#search-results').children[first]?.focus();
   }
+  function browse(source) {
+    filter.value=source; $('#search').value=''; categoryFilter.value=category='';
+    search(); $('#search').focus();
+  }
+  for (const archive of archives) {
+    const open=element('button',archive.label+' ('+number(archive.record_count)+')');
+    open.dataset.archive=archive.id; open.onclick=()=>browse(archive.id); $('#archives').append(open);
+    if (archive.anchor_id) {
+      const anchor=element('button','Open collection anchor'); anchor.onclick=()=>select(archive.anchor_id);
+      $('#archives').append(anchor);
+    }
+  }
   function search() {
+    const notices=archives.find(a=>a.id===filter.value)?.collection_notices || [];
+    $('#collection-notices').replaceChildren(...notices.map(n=>element('p',n.message)));
     const candidates=category && !filter.value && !$('#search').value.trim()
       ? records.map(record=>({record})) : index.search($('#search').value,filter.value);
     hits=[...candidates].filter(hit=>!category || kindOf(hit.record)===category); shown=0;
@@ -252,22 +284,25 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   let timer;
   $('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(search,120);};
   filter.onchange=search; $('#more-results').onclick=more;
-  categoryFilter.onchange=()=>{category=categoryFilter.value; search(); refresh();};
-  const priority=new Map(styles.map(style=>[style.id,style.priority]));
+  categoryFilter.onchange=()=>{category=categoryFilter.value; search();};
+  const priority=new Map(files.map(f=>[f.id,f.pickPriority]));
+  const compare=(a,b)=>a.priority-b.priority || a.rank-b.rank || a.distance-b.distance || a.record.id.localeCompare(b.record.id,'en');
   function hitsAt(point) {
     const layers=styles.filter(style=>visible(style.source)).map(style=>style.id);
     if (!layers.length) return [];
     const {x,y}=point, candidates=new Map();
     for (const f of map.queryRenderedFeatures([[x-5,y-5],[x+5,y+5]],{layers})) {
-      const id=f.properties.id, record=byID.get(id);
-      if (candidates.has(id) || !record || !allowed(f.source,f.properties)) continue;
-      const center=f.layer.type==='circle' && f.geometry.type==='Point'?map.project(f.geometry.coordinates):null;
-      const rank=Number(f.properties.rank);
-      candidates.set(id,{record,priority:priority.get(f.layer.id),rank:rank>0?rank:Infinity,
-        distance:center?Math.hypot(center.x-x,center.y-y):0});
+      const props=f.properties, record=byID.get(props.record_id);
+      if (!record || !allowed(f.source,props)) continue;
+      const coords=f.geometry.type==='Point' ? [f.geometry.coordinates] :
+        f.geometry.type==='MultiPoint' ? f.geometry.coordinates : [];
+      const distances=coords.map(coord=>{const p=map.project(coord); return Math.hypot(p.x-x,p.y-y);});
+      const hit={record,layer:f.source,props,priority:priority.get(f.source),
+        rank:f.source==='settlements' && Number(props.rank)>0 ? Number(props.rank) : Infinity,
+        distance:distances.length ? Math.min(...distances) : 0};
+      if (!candidates.has(record.id) || compare(hit,candidates.get(record.id))<0) candidates.set(record.id,hit);
     }
-    return [...candidates.values()].sort((a,b)=>a.priority-b.priority || a.rank-b.rank ||
-      a.distance-b.distance || a.record.id.localeCompare(b.record.id,'en')).map(hit=>hit.record);
+    return [...candidates.values()].sort(compare);
   }
   const canvas=map.getCanvas(), tooltip=$('#map-hover');
   let pointer, frame=0;
@@ -276,13 +311,13 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
   }
   function hover() {
     frame=0;
-    const record=pointer && !map.isMoving() && hitsAt(pointer)[0];
-    if (!record) {clearHover();return;}
-    const props=attributes.get(record.id);
+    const hit=pointer && !map.isMoving() && hitsAt(pointer)[0];
+    if (!hit) {clearHover();return;}
+    const {record,layer,props}=hit;
     let label=record.label;
-    if(record.layer==='settlements') label+=' · Settlement ('+(props.rank==='-'?'unranked':'Rank '+props.rank)+')';
+    if(layer==='settlements') label+=' · Settlement ('+(props.rank==='-'?'unranked':'Rank '+props.rank)+')';
     else if(props?.ferry) label+=' · Temporary ferry connector'+(props.certainty?' · '+props.certainty:'');
-    else if(record.layer!=='maritime') label+=' · '+(props?.certainty || record.kind);
+    else label+=' · '+(props.certainty || (layer==='ports'?'Maritime port':sourceGroup.get(layer).title));
     tooltip.textContent=label; tooltip.hidden=false; canvas.style.cursor='pointer';
   }
   function scheduleHover() {
@@ -303,7 +338,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
       const panel=$('#record-panel'); panel.hidden=false; delete panel.dataset.record; delete panel.dataset.loaded;
       $('#record-content').replaceChildren(element('p','Choose a record to inspect.'));
       showPicker(true);
-    } else if (overlap.length) select(overlap[0].id,null,'map');
+    } else if (overlap.length) select(overlap[0].record.id,null,'map');
     else showPicker();
   });
   refresh();

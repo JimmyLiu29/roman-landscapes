@@ -7,14 +7,31 @@ async function previousShells() {
   return (await caches.keys()).filter(key => key.startsWith('atlas-shell-') && key !== SHELL);
 }
 
+async function savedSchema() {
+  return new Promise(resolve=>{
+    const open=indexedDB.open('roman-atlas');
+    open.onupgradeneeded=()=>open.transaction.abort();
+    open.onerror=()=>resolve(null);
+    open.onsuccess=()=>{
+      const db=open.result;
+      if (!db.objectStoreNames.contains('state')) {db.close();resolve(null);return;}
+      const tx=db.transaction('state','readonly');
+      const get=tx.objectStore('state').get('active');
+      tx.oncomplete=()=>{db.close(); resolve(get.result?.app_schema);};
+      tx.onabort=tx.onerror=()=>{db.close();resolve(null);};
+    };
+  });
+}
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL);
     await cache.addAll(FILES.map(path => new Request(path, { cache: 'reload' })));
+    const schema=await savedSchema();
     for (const key of await previousShells()) {
       const response = await caches.match('/release.json', { cacheName: key });
       const manifest = await response?.json().catch(() => null);
-      if (manifest && typeof manifest === 'object' && !('view_bounds' in manifest)) {
+      if (manifest && typeof manifest === 'object' && schema!==1 && (!('view_bounds' in manifest) || manifest.app_schema!==2)) {
         legacyTakeover = true;
         await self.skipWaiting();
         break;

@@ -2,11 +2,15 @@
 
 **Roman Landscapes** (`https://romanlandscapes.org`) is an open educational and scholarly digital atlas of the Roman world. It integrates published datasets on physical geography, urban settlements, terrestrial road networks, and maritime connectivity into a self-contained, offline-capable web application.
 
+MIT covers original code and documentation. See [Third-party notices](THIRD-PARTY-NOTICES.md) for the data and browser libraries.
+
 - **Author**: Jimmy Liu
 - **Academic & Technical Guidance**: Fang, Xinjie and Classical Cat Digital Humanities Lab
 - **Live Atlas**: https://romanlandscapes.org
 
-## Current Release Scope (`v0.1` — Foundation & Transport Networks)
+## Atlas v0.2
+
+The v0.2 catalog contains 75,223 records from 16 active sources, including 23,385 economic evidence records and 324 historical events. Of 1,208 people, 414 have activity or event locations and 944 have biographical locations. The groups overlap by 150 people, leaving 794 with biographical locations only. The historical links reach 383 town nodes. The complete offline package occupies 57,448,450 bytes (54.8 MiB / 57.45 MB).
 
 - **Dual Physical Base Maps (Natural Earth `10m`)**:
   - *Simple Geography*: High-contrast land and sea contours across `17°W–55°E, 15°N–63°N`.
@@ -22,6 +26,10 @@
 - **Complete Offline PWA Support**:
   - Deterministic build and checksum-verified local browser storage (Origin Private File System + Service Worker) enabling full offline inspection of all map modes, layers, search indexes, record details, and dataset documentation.
 
+## Acquisition
+
+Use `bin/acquire` (default `--scope all`) to verify the full inventory. Direct sources can be restored from their pinned URLs. Supply locked snapshots at the paths and SHA-256 digests in the source manifest. Two companion assets are tracked in the repository. Use `bin/acquire --scope foundation` for the direct foundation subset.
+
 ## Repository Structure
 
 - `web/` — Vanilla HTML, CSS, and JavaScript ES module application source (with vendored MapLibre GL `6.14.0` and PMTiles `4.5.0`).
@@ -32,7 +40,7 @@
 
 ## Local Build & Verification
 
-Requires Python 3.14+ in an isolated virtual environment (`.venv`) with dependencies pinned in `requirements.txt`:
+The full build uses Python 3.13 in an isolated virtual environment (`.venv`) with dependencies pinned in `requirements.txt`:
 
 ```sh
 python3 -m venv .venv

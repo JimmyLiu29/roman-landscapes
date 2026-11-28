@@ -42,12 +42,12 @@ class AtlasTests(unittest.TestCase):
                 records.append(record)
             (root/'data/source-manifest.json').write_text(json.dumps({'schema':1, 'sources':records}))
             (root/'data/oxford-water').write_bytes(b'corrupted')
-            for args in ([],['--scope','foundation']):
-                self.assertEqual(subprocess.run([root/'bin/acquire',*args],capture_output=True).returncode,0)
-            result = subprocess.run([root/'bin/acquire','--scope','all'],capture_output=True,text=True)
-            self.assertNotEqual(result.returncode,0)
-            self.assertTrue(all('data/'+name in result.stderr for name in inputs.ADDITIONS))
-            self.assertIn(lock,result.stderr)
+            self.assertEqual(subprocess.run([root/'bin/acquire','--scope','foundation'],capture_output=True).returncode,0)
+            for args in ([], ['--scope','all']):
+                result = subprocess.run([root/'bin/acquire',*args],capture_output=True,text=True)
+                self.assertNotEqual(result.returncode,0)
+                self.assertTrue(all('data/'+name in result.stderr for name in inputs.ADDITIONS))
+                self.assertIn(lock,result.stderr)
             with patch('urllib.request.urlopen') as network, self.assertRaises(ValueError):
                 inputs.acquire('all',root=root,download=True)
             network.assert_not_called()
@@ -130,3 +130,24 @@ class AtlasTests(unittest.TestCase):
             self.assertEqual(output_directory('candidate'), Path(tmp).resolve()/'candidate')
         with self.assertRaises(ValueError):
             output_directory(ROOT/'.state'/'candidate')
+
+    @unittest.skipUnless((ROOT / 'data/raw').is_dir(), 'Full build requires locked source snapshots')
+    def test_offline_site_build(self):
+        for command in ('build', 'verify'):
+            subprocess.run([ROOT / 'bin' / command], check=True, stdout=subprocess.PIPE)
+        release = json.loads((ROOT / 'dist/release.json').read_bytes())
+        self.assertEqual(release['app_schema'], 2)
+        self.assertEqual(len(release['files']), 399)
+
+    def test_guide_markup_and_links(self):
+        from render_docs import article, inline
+        rendered = article('example', '## Guide\n### Places\n| ID | Label |\n| --- | --- |\n| 1 | *Test* |\n')
+        self.assertIn('<td><em>Test</em></td>', rendered)
+        self.assertIn('id="example-chapter-1" tabindex="-1"', rendered)
+        self.assertIn('&lt;span&gt;', inline('<span>'))
+        self.assertIn('rel="noopener noreferrer"', inline('[Source](https://example.org/a)'))
+        for unsupported in ('# Other heading', '> Quote', '```', '| ID | Label |'):
+            with self.subTest(unsupported=unsupported), self.assertRaises(ValueError):
+                article('example','## Guide\n### Places\n'+unsupported)
+        with self.assertRaises(ValueError):
+            inline('[Source](file:///tmp/sample)')

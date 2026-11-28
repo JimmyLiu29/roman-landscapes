@@ -1,9 +1,3 @@
-// Source IDs govern catalog membership. Scope keys govern visible groups and their files.
-const foundation = [
-  ['hanson-cities', 'Hanson Cities'], ['itinere', 'Itiner-e'],
-  ['orbis-maritime', 'ORBIS Maritime'], ['pleiades', 'Pleiades']
-].map(([id,label])=>({id,label,scope:id}));
-
 const circle = (id,color,radius,priority) => ({id,type:'circle',priority,
   paint:{'circle-color':color,'circle-radius':radius,'circle-stroke-width':0.6,'circle-stroke-color':'#faf7ef'}});
 const ferry=['==',['get','ferry'],true];
@@ -61,18 +55,38 @@ const groups = [
       {id:'ports',unit:'ports',switchLabel:'Maritime ports',styles:[circle('ports','#296f79',3.1,1)]}],
     legend:[['shipping','Open-sea / ferry',['overseas','ferry']],['slowover','Slow open sea',['slowover']],
       ['coastal','Coastal',['coastal']],['port','Ports',null,'ports']]},
-  ...[['economy','Economic evidence','#784d84'],['events','Events','#9b563b'],
-      ['people','People','#62699a'],['people-biography','Biographical places','#57825f']].map(([id,title,color])=>({
-    id,scope:id,title,categoryFilter:true,sources:[{id,styles:[circle(id,color,3,4)]}],legend:[[id,title]]
+  ...[
+    ['economy','Economic evidence','#9d4c24'],
+    ['people-biography','People: birth, death & burial','#7b4193'],
+    ['people','People: activity & events','#007c82'],
+    ['events','Historical events','#c43544']
+  ].map(([id,title,color])=>({
+    id,title,sources:[{id,styles:[circle(id,color,4,0)]}],legend:[[id,title]]
   }))
 ];
 
+export const economyColors = {
+  'Mining and metals':'#805023', 'Shipwrecks and cargo':'#1266a2',
+  'Amphorae and commodities':'#b34155', 'Fiscal records':'#5b4392',
+  'Oil and wine production':'#497528'
+};
+const economy = groups.find(group=>group.id==='economy');
+economy.sources[0].styles[0].paint['circle-color'] =
+  ['match',['get','category'],...Object.entries(economyColors).flat(),'#626262'];
+economy.legend = Object.keys(economyColors).map((name,i)=>['economic-'+i,name]);
+const drawOrder = ['maritime','roads','ports','settlements','economy','people-biography','people','events'];
+const pickOrder = ['settlements','ports','events','people','people-biography','economy','roads','maritime'];
+const credits = {maritime:'Stanford ORBIS v2',roads:'Itiner-e v1.3',settlements:'Oxford Hanson Cities',economy:'OxREP · RAAD'};
+
 export function registry(release) {
-  const scope=new Set(release.scope || []);
-  const datasets=(release.datasets || foundation).filter(d=>scope.has(d.scope ?? d.id));
-  const activeGroups=groups.filter(g=>scope.has(g.scope));
-  const reports={economy:'economy-report.json',events:'history-report.json',people:'history-report.json',
-    'people-biography':'history-report.json'};
-  const optionalFiles=new Set(activeGroups.map(group=>reports[group.id]).filter(Boolean));
-  return {datasets,groups:activeGroups,optionalFiles};
+  const {datasets, archives, files} = release;
+  const names = new Set(files.map(f=>f.path.split('/').at(-1)));
+  const active = groups.filter(group=>{
+    const dataset = group.scope ? datasets.some(d=>d.id===group.scope) :
+      group.id==='economy' ? datasets.some(d=>d.group==='economy' && !d.archive_only) :
+      datasets.some(d=>d.id==='wikidata-history');
+    return dataset && group.sources.every(s=>names.has(s.id+'.geojson.gz'));
+  }).map(group=>({...group,defaultVisible:Boolean(group.scope),attribution:credits[group.id] || 'Wikidata',
+    sources:group.sources.map(file=>({...file,drawOrder:drawOrder.indexOf(file.id),pickPriority:pickOrder.indexOf(file.id)}))}));
+  return {datasets,archives,groups:active};
 }

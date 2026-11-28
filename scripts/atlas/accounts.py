@@ -98,6 +98,12 @@ class Accounts:
         assert by_id['oxford-mines']['accounting']['empty_sheets'] == ['Sheet1']
         assert by_id['itinere']['accounting']['roma_vertex_km'] < 2
         assert by_id['pleiades']['accounting']['referenced_nonregional_names'] == 1
+        evidence = ('economy_mine', 'economy_shipwreck', 'economy_raad_observation',
+                    'economy_karanis_transaction', 'economy_press_group', 'economy_quarry',
+                    'economy_water_reference')
+        assert sum(self.count[k] for k in evidence) == 23385
+        if reports is None:
+            return
         assert reports['economy']['evidence_records'] == 23385
         assert reports['history']['associated_towns'] == len(self.towns)
         assert reports['history']['events'] == self.count['history_event']

@@ -1,5 +1,5 @@
 import { registry } from './layers.js';
-const SUPPORTED_APP_SCHEMAS = new Set([1]);
+const SUPPORTED_APP_SCHEMAS = new Set([2]);
 const DB = 'roman-atlas';
 const STORE = 'state';
 const ROOT = 'atlas-packages';
@@ -65,10 +65,14 @@ export function validateManifest(release) {
   }
   if (total !== release.bytes) throw new Error('Package size does not match the manifest.');
   const required = ['land.geojson', 'ocean.geojson', 'lakes.geojson', 'rivers.geojson', 'relief.pmtiles', 'sources.json'];
+  const ids=new Set(release.datasets?.map(d=>d.id));
+  if (ids.size!==12 || release.datasets.length!==12 || !Array.isArray(release.archives) || release.archives.length!==3 ||
+      new Set(release.archives.map(a=>a.id)).size!==3 || release.archives.some(a=>!ids.has(a.id) ||
+        !Number.isSafeInteger(a.record_count) || !Array.isArray(a.collection_notices))) throw new Error('Invalid archive inventory.');
   const {datasets,groups}=registry(release);
-  const active=datasets.map(dataset=>dataset.id);
-  if (active.length) required.push('catalog.json.gz','relations.json.gz',
-    ...groups.flatMap(group=>group.sources.map(source=>source.id+'.geojson.gz')));
+  if (groups.length!==7) throw new Error('Incomplete layer inventory.');
+  const active=datasets.map(d=>d.id);
+  required.push('coast.geojson','catalog.json.gz','relations.json.gz',...groups.flatMap(g=>g.sources.map(s=>s.id+'.geojson.gz')));
   const names=[...paths].map(path=>path.slice(('packs/'+release.id+'/').length));
   if (required.some(name=>!names.includes(name))
       || active.some(source=>!names.some(name=>name.startsWith('details-'+source+'-')))) {
@@ -125,10 +129,13 @@ export async function activeRelease(verifyHashes = false) {
   return active;
 }
 
-async function verifyContents(release, directory, signal) {
+async function verifyContents(release, directory, signal, progress) {
   const prefix = 'packs/' + release.id + '/';
   const names = new Set(release.files.map(f => f.path.slice(prefix.length)));
-  for (const entry of release.files) {
+  let checked=0;
+  const members=new Map();
+  for (const entry of [...release.files].sort((a,b)=>a.path.localeCompare(b.path))) {
+    progress?.({verifying:++checked, count:release.files.length});
     if (!entry.path.endsWith('.gz')) continue;
     signal?.throwIfAborted();
     const name = entry.path.slice(prefix.length);
@@ -140,14 +147,26 @@ async function verifyContents(release, directory, signal) {
         continue;
       }
       const data = await response.json();
-      if (name === 'catalog.json.gz' && (!Array.isArray(data.records)
-          || data.records.some(r => typeof r?.detail !== 'string' || !r.detail.endsWith('.json.gz') || !names.has(r.detail)))) {
-        throw new Error('Missing detail shard.');
+      if (name==='catalog.json.gz') {
+        if (data.schema!==2 || !Array.isArray(data.records)) throw new Error('Invalid catalog schema.');
+        const ids=new Set();
+        for (const r of data.records) {
+          if (!names.has(r.detail) || !r.detail.startsWith('details-'+r.source+'-') || ids.has(r.id)) throw new Error('Missing detail shard or duplicate ID.');
+          ids.add(r.id);
+          if (!members.has(r.detail)) members.set(r.detail,new Set());
+          members.get(r.detail).add(r.id);
+        }
+      } else if (name.startsWith('details-')) {
+        const ids=members.get(name);
+        if (!ids || ids.size!==Object.keys(data).length || Object.keys(data).some(id=>!ids.has(id) || data[id].id!==id))
+          throw new Error('Invalid detail shard membership.');
+        members.delete(name);
       }
     } catch (cause) {
       throw new Error('Invalid compressed package content or missing detail shard: ' + name, {cause});
     }
   }
+  if (members.size) throw new Error('Incomplete detail inventory.');
 }
 
 function digests(release) {
@@ -187,9 +206,9 @@ export async function recoverDownloads() {
 export async function downloadRelease(manifest, progress, signal) {
   validateManifest(manifest);
   return locked(async () => {
-    const previous = await activeRelease();
+    const previous = await activeRelease(true).catch(() => null);
     if (previous?.id === manifest.id && digests(previous) === digests(manifest)) {
-      return await activeRelease(true);
+      return previous;
     }
     const estimate = await navigator.storage.estimate();
     const required = manifest.bytes * 1.15 + 4 * 1024 * 1024;
@@ -234,7 +253,7 @@ export async function downloadRelease(manifest, progress, signal) {
         files++;
         progress?.({received, total: manifest.bytes, files, file: file.path});
       }
-      await verifyContents(manifest, directory, signal);
+      await verifyContents(manifest, directory, signal, progress);
       const active = { ...manifest, storageDirectory: name };
       // This single IndexedDB transaction is the activation point.
       signal?.throwIfAborted();

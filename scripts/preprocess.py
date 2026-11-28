@@ -45,7 +45,7 @@ def output_directory(path):
     return out
 
 
-def build(out, manifest):
+def build_pack(out, manifest, *, write_reports=False):
     sources = {r['id']: r for r in manifest['sources']}
     archive = model.Atlas(out, set(sources))
     stage = out / 'packs' / 'stage'
@@ -91,8 +91,9 @@ def build(out, manifest):
         d['occurrences']['events']['position_basis'] for d in archive.details[history.SOURCE] if 'events' in d['occurrences']))
     hist['occurrence_position_basis'] = dict(Counter(
         o['position_basis'] for d in archive.details[history.SOURCE] for o in d['occurrences'].values()))
-    write(out / 'history-report.json', hist)
-    write(out / 'economy-report.json', econ)
+    if write_reports:
+        write(out / 'history-report.json', hist)
+        write(out / 'economy-report.json', econ)
     files = []
     for path in sorted(stage.iterdir()):
         files.append(dict(name=path.name, bytes=path.stat().st_size, sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -126,7 +127,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=out.parent) as temp:
         candidate = Path(temp) / 'atlas'
-        build(candidate, manifest)
+        build_pack(candidate, manifest, write_reports=True)
         receipt = verify(candidate)
         if out.exists():
             if any(out.iterdir()):

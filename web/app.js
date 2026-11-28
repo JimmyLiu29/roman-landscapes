@@ -9,6 +9,7 @@ const $ = selector => document.querySelector(selector);
 const protocol = new pmtiles.Protocol();
 maplibregl.addProtocol('pmtiles', protocol.tile);
 let map, release, saved, abort, registration, installPrompt;
+let repair=false;
 let natural = true, modeChosen = false, hasStoredContent = false, latest, offlineRemoved = false;
 const viewBounds = [[-27, 8], [65, 67]];
 const naturalCredit = '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a>';
@@ -34,7 +35,8 @@ async function content(name) {
   const file = release.files.find(entry => entry.path.endsWith('/' + name));
   if (saved) return localFile(saved, file);
   const response = await fetch('/' + file.path);
-  if (response.status === 404 && name.startsWith('details-')) {
+  if (response.status === 404) {
+    if (!name.startsWith('details-')) await recoverShell();
     const error = new Error('A newer atlas release is online. Reload to open this record.');
     error.status = 404;
     throw error;
@@ -43,6 +45,22 @@ async function content(name) {
   const blob = await response.blob();
   if (blob.size !== file.bytes || await fileHash(blob) !== file.sha256) throw new Error('Map checksum mismatch.');
   return new File([blob], file.sha256);
+}
+
+let recovery;
+function recoverShell() {
+  if (!recovery) recovery=(async ()=>{
+    if (!registration || sessionStorage.getItem('retry-shell')===release.id) return;
+    await registration.update().catch(()=>{});
+    const worker=registration.installing;
+    if (worker && worker.state!=='installed') await new Promise(resolve=>{
+      function finish() {worker.removeEventListener('statechange',changed); clearTimeout(timer); resolve();}
+      function changed() {if (['installed','activated','redundant'].includes(worker.state)) finish();}
+      const timer=setTimeout(finish,5000); worker.addEventListener('statechange',changed); changed();
+    });
+    if (registration.waiting) {sessionStorage.setItem('retry-shell',release.id); reloadAtlas();}
+  })();
+  return recovery;
 }
 
 async function render() {
@@ -109,6 +127,8 @@ async function render() {
     const label = record.label || names[record.id.replace('natural-earth-', '')];
     row.append(externalLink(record.landing_url, label + ' · ' + (record.archive_version || record.version)),
       element('p',record.citation),element('p',record.terms),externalLink(record.terms_url,'Source terms'));
+    for (const limitation of record.limitations || []) row.append(element('p',limitation));
+    for (const warning of record.warnings || []) row.append(element('p',warning.message));
     if (record.endpoint_rule) row.append(element('p',record.endpoint_rule));
     if (record.notice) {
       const notice = element('details');
@@ -134,7 +154,7 @@ function size(bytes) {
 }
 
 function packageControls() {
-  $('#download').textContent = saved ? 'Verify saved maps' : 'Enable offline use';
+  $('#download').textContent = repair ? 'Repair offline maps' : saved ? 'Verify saved maps' : 'Enable offline use';
   $('#remove').hidden = !hasStoredContent;
   $('#update-maps').hidden = !saved || !latest || latest.id===saved.id;
   if (release) $('#package-description').textContent = release.id+' · '+size(release.bytes)
@@ -151,10 +171,12 @@ async function transfer(manifest, update) {
   $('#cancel').hidden = $('#progress').hidden = false;
   $('#progress').value = 0;
   const persistent = await navigator.storage.persist?.();
-  saved = await downloadRelease(manifest, ({ received, total, files }) => {
+  saved = await downloadRelease(manifest, ({ received, total, files, verifying, count }) => {
+    if (verifying) {status('Verifying saved files: '+verifying+' / '+count); return;}
     $('#progress').max = total; $('#progress').value = received;
     status(files+' / '+manifest.files.length+' files · '+(received/1048576).toFixed(1)+' / '+(total/1048576).toFixed(1)+' MiB');
   }, abort.signal);
+  repair=false; release=saved;
   hasStoredContent = true;
   packageControls();
   status('Both maps are verified and ready offline.' + (persistent===false ? ' The browser may evict offline data under storage pressure.' : ''));
@@ -176,8 +198,14 @@ async function runAction(action) {
 }
 
 $('#download').onclick = () => runAction(async () => {
-  if (!saved) return transfer(release, false);
-  if (!await activeRelease(true)) throw new Error('The saved maps were removed.');
+  if (!saved) return transfer(latest || release, false);
+  try {
+    if (!await activeRelease(true)) throw new Error('The saved maps were removed.');
+  } catch (error) {
+    const candidate=await networkManifest();
+    if (candidate) {latest=validateManifest(candidate); saved=null; repair=true; packageControls();}
+    throw error;
+  }
   status('All saved map files passed SHA-256 verification.');
 });
 $('#update-maps').onclick = () => runAction(()=>transfer(latest, true));
@@ -191,7 +219,7 @@ async function networkManifest() {
 }
 
 async function removed() {
-  saved=null; latest=null; hasStoredContent=false;
+  repair=false; saved=null; latest=null; hasStoredContent=false;
   packageControls();
   if (await networkManifest()) { location.reload(); return; }
   offlineRemoved=true; mode('simple'); $('input[value=natural]').disabled=true;
@@ -244,16 +272,27 @@ async function start() {
   try { await recoverDownloads(); } catch { /* A concurrent transfer owns its staging directory. */ }
   hasStoredContent=await storedContentStatus().catch(()=>false);
   packageControls();
-  try { saved = await activeRelease(); }
-  catch (error) { storageError=error; status(error.message,true); }
-  if (saved) release=saved;
-  else {
-    if (storageError && !await networkManifest()) throw storageError;
-    try {
+  const legacy=(await readState('active').catch(()=>null))?.app_schema===1;
+  if (legacy) {
+    const candidate=await networkManifest();
+    if (!candidate) {
+      status('The saved offline package is from an earlier schema (v0.1). Reconnect to upgrade to the v0.2 atlas.',true);
+      return;
+    }
+    release=validateManifest(candidate);
+  } else {
+    try { saved=await activeRelease(); }
+    catch (error) {storageError=error;}
+    if (saved) release=saved;
+    else if (storageError) {
+      const candidate=await networkManifest();
+      if (!candidate) throw storageError;
+      release=validateManifest(candidate); repair=true;
+    } else {
       const response=await fetch('/release.json');
       if (!response.ok) throw new Error('Connect to load the atlas or enable offline maps first.');
       release=validateManifest(await response.json());
-    } catch (error) { throw storageError || error; }
+    }
   }
   const preference=await readState('mode').catch(()=>null);
   if (!modeChosen) mode(preference==='simple'?'simple':'natural');
@@ -264,6 +303,7 @@ async function start() {
     await navigator.serviceWorker.ready;
     $('#download').disabled=false;
     status(storageError?.message || (saved ? 'Saved maps are ready offline.' : 'Save the full region for use without a connection.'), !!storageError);
+    if (legacy) status('A previous v0.1 offline package is stored. Select Enable offline use to save the complete v0.2 atlas ('+(release.bytes/1048576).toFixed(1)+' MiB).');
     if (saved && await navigator.storage.persisted?.()===false && !storageError) {
       status('Saved maps are ready offline. The browser may evict offline data under storage pressure.');
     }

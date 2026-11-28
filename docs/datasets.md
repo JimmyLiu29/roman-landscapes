@@ -1,4 +1,6 @@
-# Guide to Base Geography & Foundation Datasets (`v0.1`)
+## Dataset Guide
+
+The v0.2 catalog contains 75,223 records from 16 active sources, including 23,385 economic evidence records and 324 historical events. Of 1,208 people, 414 have activity or event locations and 944 have biographical locations. The groups overlap by 150 people, leaving 794 with biographical locations only. The historical links reach 383 town nodes. The complete offline package occupies 57,448,450 bytes (54.8 MiB / 57.45 MB).
 
 ### 1. Physical Geography Base Maps — *Natural Earth* (`10m` Physical Vectors & Shaded Relief)
 
@@ -53,7 +55,7 @@ Crucially, Itiner-e classifies every road segment by its **epistemic certainty**
 
 #### Methodological & Technical Notes
 - **Coordinate System Normalization**: Although the accompanying publication describes the data in standard geographic coordinates (`EPSG:4326`), the raw GeoJSON payload in release `v1.3` is encoded in projected World Mercator meters (`EPSG:3395`) with 3D `XYZ` coordinates. Our build pipeline transforms the horizontal geometry to `EPSG:4326` for accurate web mapping and preserves the original XYZ vertices and CRS under Original source fields.
-- **Sentinel Dates**: In the upstream dataset, numeric values of `0` and `9999` in the `Lower_Date` and `Upper_Date` columns are used as placeholder sentinels meaning "date unspecified / unknown," not the years `0` or `9999 CE`. The atlas normalizes these sentinel bounds to `unknown` in human-readable summaries while keeping the raw fields visible for inspection. The field definitions also mark zero in either error margin as uncertain.
+- **Sentinel Dates**: In the upstream dataset, numeric values of `0` and `9999` in the `Lower_Date` and `Upper_Date` columns are used as placeholder sentinels meaning "date unspecified / unknown," not the years `0` or year 9999. The atlas normalizes these sentinel bounds to `unknown` in human-readable summaries while keeping the raw fields visible for inspection. The field definitions also mark zero in either error margin as uncertain.
 
 ---
 
@@ -86,10 +88,64 @@ Anyone studying the ancient world quickly runs into the problem of names: a sing
 **Pleiades**—jointly supported by the Institute for the Study of the Ancient World (ISAW) at New York University and the Ancient World Mapping Center (AWMC) at UNC Chapel Hill—is a community gazetteer of ancient places. Derived originally from the *Barrington Atlas of the Greek and Roman World* (edited by Richard J. A. Talbert, 2000) and continuously expanded by scholars worldwide, Pleiades assigns each ancient place a permanent, stable numeric identifier (a Pleiades URI/ID) and catalogs its attested names, chronological periods, and coordinate precision.
 
 #### What Is Included in *Roman Landscapes*
-The `v0.1` foundation release incorporates the **Pleiades `v4.1`** snapshot (`2025-05-28`), filtered to our geographic bounding box (`17°W–55°E, 15°N–63°N`):
+The atlas incorporates the **Pleiades `v4.1`** snapshot (`2025-05-28`), filtered to the geographic bounding box (`17°W–55°E, 15°N–63°N`):
 - **Regional Gazetteer Places (`32,665` located places)**: Includes settlements, sanctuaries, forts, bridges, mines, battlefields, islands, and geographic features with representative coordinates inside the map bounds.
 - **Attested Names & Variants (`29,150` joined name records)**: Historical spellings, ancient Greek and Latin transliterations, and modern place names linked to their parent Pleiades place records (preserving all distinct attested forms even where upstream rows share a URI).
 
 #### How It Functions in the Atlas
 - **Searchable Gazetteer Backbone (Not a Cluttered Permanent Overlay)**: Turning on 32,665 points at once would turn the map into an unreadable solid block of ink. Instead, Pleiades serves as a **searchable gazetteer directory and cross-reference anchor**. You can search for any ancient name, variant spelling (such as `Roma` or `Rhome`), or Pleiades ID in the search box; selecting a Pleiades record flies the map to its representative point, highlights its location, and displays its full provenance and alias list.
 - **Disciplined Cross-Dataset Linking**: In *Roman Landscapes*, Pleiades IDs act as an explicit bridge only where a dataset natively supplies a Pleiades reference or a documented scholarly crosswalk exists. We never force automatic "nearest-neighbor" joins between Hanson cities, Itiner-e road segments, and Pleiades entries based merely on coordinate proximity.
+
+One additional source-identified place, `pleiades:114765`, is available from linked economic records. It has no representative coordinate.
+
+---
+
+### 6. Mining and metals
+
+The mining inventory preserves 1,399 site records. Search by mineID, Domergue number or Romanian RAN identifier. Read the opening and closing bounds separately. A missing coordinate leaves the record available in search.
+
+---
+
+### 7. Shipwrecks and cargo
+
+The 1,818 wreck records preserve approximate locations and the original wreck, Parker and Strauss identifiers. Cargo is attached through two different keys. The wreck records contain 887 amphora rows and 2,544 site objects. Three unassigned objects remain together in a source note. Two shifted spreadsheet rows include the normalized fields alongside their original values.
+
+---
+
+### 8. Amphorae and commodities
+
+RAAD records 1,469 observations in 79 assemblages. Each observation comes from a type-by-site matrix cell. An assemblage total and its component observations describe the same material. Follow explicit place IDs and the native type concordance to inspect these relationships.
+
+---
+
+### 9. Karanis tax rolls
+
+Browse 17,053 transactions in source order. A single collection anchor links the archive to Karanis. The archive location supplies no individual transaction coordinate. P.Mich. and line identify document locations. The two corrected drachma columns remain distinct. Three regnal-year cells contain the spreadsheet value 42339.
+
+---
+
+### 10. Olive and wine presses
+
+The 232 grouped records represent 760 presses. The press count measures installations reported within groups. Locations and date ranges retain source uncertainty, including unspecified bounds.
+
+---
+
+### 11. Stone quarries
+
+Browse 792 quarry records by source order, site, material or province. The retained table supplies neither coordinates nor external place identifiers. A matching place name alone cannot locate a quarry.
+
+---
+
+### 12. Water technologies
+
+The 622 documentary references preserve document and line locators. Twenty-five additional document place and area records are searchable through source links. Question marks in the Greek word column are already present in the source.
+
+---
+
+### 13. Historical events and people
+
+Wikidata evidence connects events and people to towns through named statements, revision IDs, roles and references. A person may appear in both map layers. Open a supporting dating event to inspect the associated claim and date statements, including events outside the mapped selection.
+
+#### Scope of interpretation
+
+Individual finds, documentary references, modeled routes and historical associations measure different things. Compare their locations and dates within the limits stated for each source.
