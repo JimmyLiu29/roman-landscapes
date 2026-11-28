@@ -39,7 +39,7 @@
       </section>
       <section>
         <h2>Offline maps</h2>
-        <p id="package-description">Both base maps and their sources.</p>
+        <p id="package-description">Complete offline atlas package (base maps, layers, archives, and sources).</p>
         <button id="download" class="primary" disabled>Enable offline use</button>
         <button id="update-maps" hidden>Update saved maps</button>
         <button id="cancel" hidden>Cancel download</button><button id="remove" hidden>Remove saved maps</button>
@@ -50,7 +50,7 @@
       </section>
       <details><summary>Sources &amp; map limits</summary>
         <p>Made with Natural Earth. The map uses modern coastlines, terrain and watercourses as physical reference points for the Roman world. Ancient shorelines and rivers could follow different courses.</p>
-        <p>Coverage extends from 17°W–55°E, 15°N–63°N. The 394 relief tiles cover zooms 0–6. The map can be viewed at zooms 1–7 within the permitted view bounds, with zoom 7 enlarging existing detail.</p>
+        <p>Coverage extends from 17°W–55°E, 15°N–63°N. The study area intersects 258 relief tiles. The buffered viewing extent includes those tiles and brings the total to 394 at zooms 0–6. The map can be viewed at zooms 1–7 within the permitted view bounds, with zoom 7 enlarging existing detail.</p>
         <p>The ocean is derived from the land outline. Water features classified as canals or reservoirs by Natural Earth are excluded.</p>
         <ul id="credits"></ul><p><a target="_blank" rel="noopener noreferrer" href="https://www.naturalearthdata.com/about/terms-of-use/">Natural Earth public-domain terms</a></p>
       </details>
@@ -85,7 +85,7 @@
 </article>
 <article id="guide-datasets" hidden>
 <h2>Dataset Guide</h2>
-<nav aria-label="Chapters"><a href="#datasets-chapter-1">1. Physical Geography Base Maps — <em>Natural Earth</em> (<code>10m</code> Physical Vectors &amp; Shaded Relief)</a> <a href="#datasets-chapter-2">2. Urban Settlements of the Roman World — <em>Oxford Hanson Cities Database</em> (<code>v1.0</code>, 2016)</a> <a href="#datasets-chapter-3">3. Terrestrial Road Networks — <em>Itiner-e: Roads of the Roman Empire</em> (<code>v1.3</code>, 2025)</a> <a href="#datasets-chapter-4">4. Maritime &amp; Ferry Network Model — <em>Stanford ORBIS</em> (<code>v2</code> Public Geometry)</a> <a href="#datasets-chapter-5">5. Ancient Place Directory &amp; Gazetteer — <em>Pleiades</em> (<code>v4.1</code>, 2025)</a> <a href="#datasets-chapter-6">6. Mining and metals</a> <a href="#datasets-chapter-7">7. Shipwrecks and cargo</a> <a href="#datasets-chapter-8">8. Amphorae and commodities</a> <a href="#datasets-chapter-9">9. Karanis tax rolls</a> <a href="#datasets-chapter-10">10. Olive and wine presses</a> <a href="#datasets-chapter-11">11. Stone quarries</a> <a href="#datasets-chapter-12">12. Water technologies</a> <a href="#datasets-chapter-13">13. Historical events and people</a></nav>
+<nav aria-label="Chapters"><a href="#datasets-chapter-1">1. Physical Geography Base Maps — <em>Natural Earth</em> (<code>10m</code> Physical Vectors &amp; Shaded Relief)</a> <a href="#datasets-chapter-2">2. Urban Settlements of the Roman World — <em>Oxford Hanson Cities Database</em> (<code>v1.0</code>, 2016)</a> <a href="#datasets-chapter-3">3. Terrestrial Road Networks — <em>Itiner-e: Roads of the Roman Empire</em> (<code>v1.3</code>, 2025)</a> <a href="#datasets-chapter-4">4. Maritime &amp; Ferry Network Model — <em>Stanford ORBIS</em> (<code>v2</code> Public Geometry)</a> <a href="#datasets-chapter-5">5. Ancient Place Directory &amp; Gazetteer — <em>Pleiades</em> (<code>v4.1</code>, 2025)</a> <a href="#datasets-chapter-6">6. Mining and Metals — <em>OxREP Mines Database</em> (<code>v3.0</code>, 2025)</a> <a href="#datasets-chapter-7">7. Shipwrecks and Cargo — <em>OxREP Shipwrecks Database</em> (<code>v2.1</code>, 2017)</a> <a href="#datasets-chapter-8">8. Amphorae and Commodities — <em>Roman Amphorae Assemblages Database</em> (<code>v1.0.0</code>, 2021)</a> <a href="#datasets-chapter-9">9. Taxation at Karanis — <em>OxREP Karanis Tax Rolls</em> (<code>v2.0</code>, 2024)</a> <a href="#datasets-chapter-10">10. Olive Oil and Wine Production — <em>OxREP Olive Oil and Wine Presses</em> (<code>v1.0</code>, 2015)</a> <a href="#datasets-chapter-11">11. Stone Extraction — <em>OxREP Gazetteer of Stone Quarries in the Roman World</em> (<code>v1.0</code>, 2013)</a> <a href="#datasets-chapter-12">12. Water-Lifting Technologies — <em>OxREP Water-Lifting Technology Database</em> (<code>v1.0</code>, 2008)</a> <a href="#datasets-chapter-13">13. Political and Military History — <em>Wikidata</em> (12 October 2026 snapshot)</a></nav>
 <div class="guide-text">
 <p>The v0.2 catalog contains 75,223 records from 16 active sources, including 23,385 economic evidence records and 324 historical events. Of 1,208 people, 414 have activity or event locations and 944 have biographical locations. The groups overlap by 150 people, leaving 794 with biographical locations only. The historical links reach 383 town nodes. The complete offline package occupies 57,448,450 bytes (54.8 MiB / 57.45 MB).</p>
 <h3 id="datasets-chapter-1" tabindex="-1">1. Physical Geography Base Maps — <em>Natural Earth</em> (<code>10m</code> Physical Vectors &amp; Shaded Relief)</h3>
@@ -95,7 +95,7 @@
 <p>The atlas offers two base-map modes that can be switched at any time without losing your current position or selected records:</p>
 <ul>
 <li><strong>Simple Geography Mode</strong>: Displays clean land and sea contours (<code>land.geojson</code>, <code>ocean.geojson</code>, and coastline boundaries), designed for high-contrast inspection of dense road networks and settlement distributions.</li>
-<li><strong>Natural Geography Mode</strong>: Adds 394 pre-rendered shaded relief tiles (<code>z0–z6</code>, viewable up to <code>z7</code>) together with <strong>318 river features</strong> and <strong>230 lake features</strong>, highlighting the mountain barriers (such as the Alps, Apennines, Taurus, and Atlas ranges) and river corridors (the Rhine, Danube, Rhône, Po, Tiber, and Nile) that structured ancient movement.</li>
+<li><strong>Natural Geography Mode</strong>: The study area intersects 258 relief tiles. The wider, buffered viewing extent contains 394 tiles in total. This mode displays the complete shaded relief set (<code>z0–z6</code>, viewable up to <code>z7</code>) together with <strong>318 river features</strong> and <strong>230 lake features</strong>, highlighting the mountain barriers (such as the Alps, Apennines, Taurus, and Atlas ranges) and river corridors (the Rhine, Danube, Rhône, Po, Tiber, and Nile) that structured ancient movement.</li>
 </ul>
 <h4>How Scholars Use It &amp; Important Limitations</h4>
 <ul>
@@ -176,29 +176,37 @@
 </ul>
 <p>One additional source-identified place, <code>pleiades:114765</code>, is available from linked economic records. It has no representative coordinate.</p>
 <hr>
-<h3 id="datasets-chapter-6" tabindex="-1">6. Mining and metals</h3>
-<p>The mining inventory preserves 1,399 site records. Search by mineID, Domergue number or Romanian RAN identifier. Read the opening and closing bounds separately. A missing coordinate leaves the record available in search.</p>
+<h3 id="datasets-chapter-6" tabindex="-1">6. Mining and Metals — <em>OxREP Mines Database</em> (<code>v3.0</code>, 2025)</h3>
+<p>Andrew Wilson’s inventory brings together 1,399 records of mineral extraction. Compare the distribution of workings by metal or follow a site through its mineID, Domergue number or Romanian RAN identifier. The atlas locates 1,388 records and retains the other 11 in search.</p>
+<p>Read the earliest and latest proposed opening and closing dates separately. A range bounds the evidence for a working. It cannot establish continuous exploitation or the volume of ore produced.</p>
 <hr>
-<h3 id="datasets-chapter-7" tabindex="-1">7. Shipwrecks and cargo</h3>
-<p>The 1,818 wreck records preserve approximate locations and the original wreck, Parker and Strauss identifiers. Cargo is attached through two different keys. The wreck records contain 887 amphora rows and 2,544 site objects. Three unassigned objects remain together in a source note. Two shifted spreadsheet rows include the normalized fields alongside their original values.</p>
+<h3 id="datasets-chapter-7" tabindex="-1">7. Shipwrecks and Cargo — <em>OxREP Shipwrecks Database</em> (<code>v2.1</code>, 2017)</h3>
+<p>The 1,818 wreck records document vessels and cargo at sea. The atlas preserves the native wreck, Parker and Strauss identifiers. Wreck IDs link 887 amphora entries to wrecks, while location IDs link 2,544 site objects. Three objects without a secure match remain in a separate source note. Two shifted spreadsheet rows retain their original values alongside the normalized fields.</p>
+<p>Only 1,584 wrecks have a mapped location, and plotted positions may be approximate. Recovery, excavation and publication affect which wrecks enter the inventory. Concentrations of finds alone cannot establish the volume of traffic on a route.</p>
 <hr>
-<h3 id="datasets-chapter-8" tabindex="-1">8. Amphorae and commodities</h3>
-<p>RAAD records 1,469 observations in 79 assemblages. Each observation comes from a type-by-site matrix cell. An assemblage total and its component observations describe the same material. Follow explicit place IDs and the native type concordance to inspect these relationships.</p>
+<h3 id="datasets-chapter-8" tabindex="-1">8. Amphorae and Commodities — <em>Roman Amphorae Assemblages Database</em> (<code>v1.0.0</code>, 2021)</h3>
+<p>The RAAD workbook organizes transport containers by type and findspot. Its 1,469 populated type-by-site observations belong to 79 assemblages. The map locates the assemblage, and the detail view connects its observations to the source typology and concordance. Seventy assemblages carry an explicit Pleiades link.</p>
+<p>An assemblage total and its component observations describe the same finds. Adding them counts the material twice. A vessel type provides evidence for the movement of containers, with the identification of their contents dependent on the source.</p>
 <hr>
-<h3 id="datasets-chapter-9" tabindex="-1">9. Karanis tax rolls</h3>
-<p>Browse 17,053 transactions in source order. A single collection anchor links the archive to Karanis. The archive location supplies no individual transaction coordinate. P.Mich. and line identify document locations. The two corrected drachma columns remain distinct. Three regnal-year cells contain the spreadsheet value 42339.</p>
+<h3 id="datasets-chapter-9" tabindex="-1">9. Taxation at Karanis — <em>OxREP Karanis Tax Rolls</em> (<code>v2.0</code>, 2024)</h3>
+<p>The archive preserves 17,053 transactions in source order. The P.Mich. identifier and line locate a payment in its document. A single map anchor locates the collection at Karanis. The rolls supply no coordinates for individual payments.</p>
+<p>The two corrected drachma fields preserve distinct readings of the amount. Three regnal-year cells retain the anomalous spreadsheet value 42339 and carry a warning in the detail view.</p>
 <hr>
-<h3 id="datasets-chapter-10" tabindex="-1">10. Olive and wine presses</h3>
-<p>The 232 grouped records represent 760 presses. The press count measures installations reported within groups. Locations and date ranges retain source uncertainty, including unspecified bounds.</p>
+<h3 id="datasets-chapter-10" tabindex="-1">10. Olive Oil and Wine Production — <em>OxREP Olive Oil and Wine Presses</em> (<code>v1.0</code>, 2015)</h3>
+<p>The database describes agricultural processing installations. Its 232 grouped records represent 760 presses. The 225 mapped groups locate reported evidence, and the remaining seven can be inspected in search. A group may contain several presses.</p>
+<p>Counts measure the installations reported at each site. Estimating production would also require evidence for capacity, use and chronology. Open date bounds retain the uncertainty of the source.</p>
 <hr>
-<h3 id="datasets-chapter-11" tabindex="-1">11. Stone quarries</h3>
-<p>Browse 792 quarry records by source order, site, material or province. The retained table supplies neither coordinates nor external place identifiers. A matching place name alone cannot locate a quarry.</p>
+<h3 id="datasets-chapter-11" tabindex="-1">11. Stone Extraction — <em>OxREP Gazetteer of Stone Quarries in the Roman World</em> (<code>v1.0</code>, 2013)</h3>
+<p>The archive contains 792 quarry records. Site names, materials and provinces allow comparison of stone extraction across regions. Browsing follows the source order so that a reader can trace an entry back to the gazetteer.</p>
+<p>The retained table supplies neither coordinates nor external place identifiers. The atlas preserves every record in the archive and makes no spatial join from a place name alone.</p>
 <hr>
-<h3 id="datasets-chapter-12" tabindex="-1">12. Water technologies</h3>
-<p>The 622 documentary references preserve document and line locators. Twenty-five additional document place and area records are searchable through source links. Question marks in the Greek word column are already present in the source.</p>
+<h3 id="datasets-chapter-12" tabindex="-1">12. Water-Lifting Technologies — <em>OxREP Water-Lifting Technology Database</em> (<code>v1.0</code>, 2008)</h3>
+<p>The archive brings together 622 documentary references to water-lifting technology. Document and line locators lead back to individual attestations. Twenty-five supporting place and area records retain the source’s own links. Several references may concern the same installation.</p>
+<p>The retained Greek term column contains question marks. The atlas flags the affected readings and leaves reconstruction to a reader consulting the cited text. Document places carry no equipment coordinates.</p>
 <hr>
-<h3 id="datasets-chapter-13" tabindex="-1">13. Historical events and people</h3>
-<p>Wikidata evidence connects events and people to towns through named statements, revision IDs, roles and references. A person may appear in both map layers. Open a supporting dating event to inspect the associated claim and date statements, including events outside the mapped selection.</p>
+<h3 id="datasets-chapter-13" tabindex="-1">13. Political and Military History — <em>Wikidata</em> (12 October 2026 snapshot)</h3>
+<p>The historical selection covers 509 BCE–565 CE, from the Roman Republic through the reign of Justinian I. It links 324 events and 1,208 people to 383 towns using the entity revisions in the 12 October 2026 Wikidata snapshot. Each town link identifies its role and the supporting statements. Qualifiers, references and supporting dating events can be inspected in the detail view.</p>
+<p>Activity or event associations locate 414 people, while birth, death or burial associations locate 944. The overlap is 150 people. A command relationship can associate a person with a town without establishing physical presence there. An event used to date a career may lie outside the mapped selection.</p>
 <h4>Scope of interpretation</h4>
 <p>Individual finds, documentary references, modeled routes and historical associations measure different things. Compare their locations and dates within the limits stated for each source.</p>
 </div>

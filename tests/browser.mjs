@@ -57,6 +57,7 @@ async function shot(page,label) {
 const types={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.json':'application/json',
   '.css':'text/css','.webmanifest':'application/manifest+json','.png':'image/png'};
 let server,port,origin,serving=dist,context,update,override,missing,slowShell=false,shellSuffix='',oldRequests=0;
+const changedFiles = new Map();
 const rules=[];
 for (const line of (await readFile(path.join(dist,'_headers'),'utf8')).split('\n')) {
   if (line.startsWith('/')) rules.push({pattern:new RegExp('^'+line.trim().split('*').map(s=>s.replace(/[.]/g,'\\.')).join('.*')+'$'),values:{}});
@@ -74,6 +75,7 @@ async function serve() {
     try {
       let bytes=await readFile(file);
       if (pathname==='/release.json' && update) bytes=JSON.stringify(update);
+      if (changedFiles.has(pathname)) bytes=changedFiles.get(pathname);
       if (pathname===override?.path) bytes=override.bytes;
       if (pathname==='/sw.js' && shellSuffix) bytes=bytes.toString().replace(/atlas-shell-([a-f0-9]{16})/,'atlas-shell-$1'+shellSuffix);
       if (slowShell && pathname==='/style.css') await new Promise(resolve=>setTimeout(resolve,900));
@@ -91,7 +93,10 @@ async function stop() {
 async function launch(dir=profile,offline=false,headed=false) {
   context=await chromium.launchPersistentContext(dir,{headless:!headed,executablePath:process.env.CHROMIUM_PATH || chromium.executablePath(),
     viewport:headed ? null : {width:1280,height:800},args:[...(headed && offline ? ['--proxy-server=http://127.0.0.1:'+port,'--proxy-bypass-list=<-loopback>'] : []),'--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
-  report.chromium=context.browser().version();assert.match(report.chromium,/^151\./);console.log('Chromium '+report.chromium);
+  report.chromium=context.browser().version();
+  if (fixture) assert(Number.parseInt(report.chromium,10)>=151);
+  else assert.match(report.chromium,/^151\./);
+  console.log('Chromium '+report.chromium);
   context.setDefaultTimeout(15000);await context.setOffline(offline);
   context.on('request',r=>{if (/^https?:/.test(r.url()) && new URL(r.url()).origin!==origin) report.thirdParty.push(r.url());});
   await context.exposeBinding('reportPolicy',(_,directive)=>report.csp.push(directive));
@@ -135,6 +140,29 @@ async function prepareUpdate(fault) {
   if (fault!=='corrupt') {file.sha256=createHash('sha256').update(bytes).digest('hex');update.bytes+=bytes.length-file.bytes;file.bytes=bytes.length;}
   override={path:'/'+file.path,bytes};
 }
+async function clickAndReload(page, selector) {
+  await Promise.all([page.waitForEvent('framenavigated', {
+    predicate: frame => frame === page.mainFrame(), timeout:180000
+  }), page.locator(selector).click()]);
+  await ready(page);
+}
+
+async function damageFile(page, name, remove=false) {
+  return page.evaluate(async ({name,remove}) => {
+    const s = await import('/storage.js'), active = await s.readState('active');
+    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('atlas-packages');
+    const dir = await root.getDirectoryHandle(active.storageDirectory);
+    const file = active.files.find(f => f.path.endsWith('/'+name));
+    if (remove) { await dir.removeEntry(file.sha256); return; }
+    const handle = await dir.getFileHandle(file.sha256);
+    const bytes = new Uint8Array(await (await handle.getFile()).arrayBuffer());
+    bytes[0] ^= 1;
+    const writer = await handle.createWritable();
+    await writer.write(bytes); await writer.close();
+    return {before:file.bytes, after:(await handle.getFile()).size};
+  }, {name,remove});
+}
+
 async function rollback(page) {
   const initial=await savedState(page);
   update={...base,app_schema:99};
@@ -160,15 +188,7 @@ async function rollback(page) {
   await serve();await context.setOffline(false);await page.reload();await ready(page);
   for (const damage of ['flip','missing']) {
     const old=await savedState(page);
-    await page.evaluate(async damage=>{
-      const s=await import('/storage.js'),a=await s.readState('active');
-      const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('atlas-packages');
-      const dir=await root.getDirectoryHandle(a.storageDirectory);
-      const f=a.files.find(f=>f.path.includes('/details-'));
-      if (damage==='missing') {await dir.removeEntry(f.sha256);return;}
-      const h=await dir.getFileHandle(f.sha256),bytes=new Uint8Array(await (await h.getFile()).arrayBuffer());bytes[0]^=1;
-      const writer=await h.createWritable();await writer.write(bytes);await writer.close();
-    },damage);
+    await damageFile(page,rows[0].detail,damage==='missing');
     await page.locator('#download').click();
     await page.getByRole('button',{name:'Repair offline maps'}).waitFor();
     if (damage==='flip') {
@@ -179,9 +199,109 @@ async function rollback(page) {
       assert.equal(await page.evaluate(async()=>(await (await import('/storage.js')).readState('active')).storageDirectory),old.dir);
       await page.evaluate(()=>navigator.storage.estimate=window.actualEstimate);
     }
-    await savePack(page);const repaired=await savedState(page);assert.notEqual(repaired.dir,old.dir);assert.equal(repaired.id,old.id);
+    await clickAndReload(page,'#download');const repaired=await savedState(page);assert.notEqual(repaired.dir,old.dir);assert.equal(repaired.id,old.id);
   }
   return page;
+}
+
+const oldRecord = 'shipwrecks:unmatched', newRecord = 'shipwrecks:revised-note';
+async function serveRevisedCatalog() {
+  await prepareUpdate('revised');
+  const catalog = await readPack('catalog.json.gz');
+  const row = catalog.records.find(r => r.id === oldRecord);
+  const shard = await readPack(row.detail);
+  row.id = newRecord; row.label = 'Revised cargo note';
+  shard[newRecord] = {...shard[oldRecord], id:newRecord};
+  delete shard[oldRecord];
+  for (const [name,data] of [['catalog.json.gz',catalog],[row.detail,shard]]) {
+    const entry = update.files.find(f => f.path.endsWith('/'+name));
+    const bytes = gzipSync(JSON.stringify(data));
+    update.bytes += bytes.length - entry.bytes;
+    entry.bytes = bytes.length; entry.sha256 = createHash('sha256').update(bytes).digest('hex');
+    changedFiles.set('/'+entry.path,bytes);
+  }
+}
+
+async function assertRevisedCatalog(page) {
+  await openRecord(page,newRecord);
+  assert.equal(await page.locator('#record-content h3').innerText(),'Revised cargo note');
+  await page.locator('#close-record').click();
+  await page.locator('#search').fill(oldRecord);
+  await page.waitForFunction(() => document.querySelector('#search-status').textContent === '0 results');
+  assert.equal(await page.locator('#search-results button').count(),0);
+}
+
+async function repairAndRemove(page) {
+  const initial = await savedState(page);
+  await openRecord(page,oldRecord);
+  await page.locator('#close-record').click();
+  await damageFile(page,rows[0].detail);
+  await serveRevisedCatalog();
+  await page.locator('#download').click();
+  await page.getByRole('button',{name:'Repair offline maps'}).waitFor();
+  await clickAndReload(page,'#download');
+  const revised = await savedState(page);
+  assert.equal(revised.id,update.id);
+  assert.notEqual(revised.dir,initial.dir);
+  assert.deepEqual(revised.dirs,[revised.dir]);
+  await assertRevisedCatalog(page);
+  changedFiles.clear(); update=null;
+  await clickAndReload(page,'#remove');
+  const empty = await page.evaluate(async () => {
+    const s=await import('/storage.js');
+    const dir=await (await navigator.storage.getDirectory()).getDirectoryHandle('atlas-packages');
+    const entries=[]; for await (const name of dir.keys()) entries.push(name);
+    return {entries, active:await s.readState('active'), stored:await s.storedContentStatus()};
+  });
+  assert.deepEqual(empty,{entries:[],active:null,stored:false});
+  await savePack(page);
+  assert.equal((await savedState(page)).id,base.id);
+
+  const length=await damageFile(page,'catalog.json.gz');
+  assert.equal(length.before,length.after);
+  await close(); await stop();
+  page=await launch(profile,true); await page.goto(origin);
+  for (const id of ['#storage-status','#map-error']) {
+    await page.locator(id).filter({hasText:/damaged.*Reconnect/i}).waitFor();
+  }
+  assert(await page.locator('#remove').isVisible() && await page.locator('#remove').isEnabled());
+  assert(await page.locator('#download').isDisabled());
+  await close(); await serve();
+  page=await launch(profile); await page.goto(origin);
+  for (const id of ['#storage-status','#map-error']) {
+    await page.locator(id).filter({hasText:/damaged.*Repair offline maps/i}).waitFor();
+  }
+  assert(await page.locator('#remove').isVisible() && await page.locator('#remove').isEnabled());
+  const repair=page.getByRole('button',{name:'Repair offline maps'});
+  assert(await repair.isEnabled());
+  await clickAndReload(page,'#download');
+  await openRecord(page,oldRecord); assert.equal((await savedState(page)).id,base.id);
+  await close();
+  return {crossVersion:{from:initial.id,to:revised.id,oldRecord,newRecord,oldDirectoryPruned:true},
+    coldCatalog:{...length,onlineRepair:true,offlineRemovalAvailable:true}, removal:{empty,downloaded:base.id}};
+}
+
+async function detailReload() {
+  const page=await launch(path.join(work,'detail-update'));
+  const cdp=await context.newCDPSession(page);
+  await cdp.send('Network.enable'); await cdp.send('Network.setCacheDisabled',{cacheDisabled:true});
+  await openAtlas(page);
+  await page.waitForFunction(()=>navigator.serviceWorker.controller);
+  await serveRevisedCatalog();
+  missing='/packs/'+base.id+'/'+rows.find(r=>r.id===oldRecord).detail;
+  shellSuffix='-detail'; slowShell=true;
+  await page.locator('#search').fill(oldRecord);
+  await page.locator('#search-results [data-record="'+oldRecord+'"]').click();
+  const reload=page.getByRole('button',{name:'Reload',exact:true});
+  await reload.waitFor();
+  let navigations=0;
+  page.on('framenavigated',f=>{if (f===page.mainFrame()) navigations++;});
+  await clickAndReload(page,'#record-content button');
+  assert.equal(navigations,1);
+  assert((await page.locator('#package-description').textContent()).startsWith(update.id));
+  await assertRevisedCatalog(page);
+  await close(); missing=null; shellSuffix=''; slowShell=false; update=null; changedFiles.clear();
+  return {clicks:1,navigations,newRecord};
 }
 
 async function migrations() {
@@ -311,8 +431,9 @@ try {
     return {serverStopped:true,coldProfile:true,bytes:base.bytes,sources:12,archives:3,distantRecord:distant.id};
   });
   await test('T-A6',async()=>{
-    page=await rollback(page);await close();const migration=await migrations();await installingRace();
-    return {...migration,rollback:['cancel','quota','checksum','gzip','shard closure','schema 99'],repair:['equal length','missing','cancel','quota'],installingRace:true};
+    page=await rollback(page);const fixes=await repairAndRemove(page);
+    const oneClick=await detailReload();const migration=await migrations();await installingRace();
+    return {...migration,...fixes,detail404:oneClick,rollback:['cancel','quota','checksum','gzip','shard closure','schema 99'],repair:['equal length','missing','cancel','quota'],installingRace:true};
   });
   await test('T-A8',async()=>{
     if (fixture) {

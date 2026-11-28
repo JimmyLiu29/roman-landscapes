@@ -1,7 +1,6 @@
 """Build or verify a self-contained offline atlas from the locked inventory."""
 import argparse
 from collections import Counter
-import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -12,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from atlas import economy, history, model
 from atlas.fields import warnings
-from foundation import BOUNDS, SOURCES, cities, roads, maritime
+from foundation import BOUNDS, SOURCES, gzip_payload, cities, roads, maritime
 from inputs import acquire
 from pipeline import VIEW_BOUNDS, physical_vectors, relief_tiles
 
@@ -23,7 +22,7 @@ def encoded(value):
 
 def write(path, value):
     data = encoded(value)
-    path.write_bytes(gzip.compress(data, compresslevel=9, mtime=0) if path.suffix == '.gz' else data)
+    path.write_bytes(gzip_payload(data) if path.suffix == '.gz' else data)
 
 
 def release_id(descriptor):

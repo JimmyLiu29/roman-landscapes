@@ -137,6 +137,7 @@ class AtlasTests(unittest.TestCase):
             subprocess.run([ROOT / 'bin' / command], check=True, stdout=subprocess.PIPE)
         release = json.loads((ROOT / 'dist/release.json').read_bytes())
         self.assertEqual(release['app_schema'], 2)
+        self.assertEqual(release['id'], 'atlas-9be34564df52ae5b')
         self.assertEqual(len(release['files']), 399)
 
     def test_guide_markup_and_links(self):

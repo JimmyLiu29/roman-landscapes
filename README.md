@@ -1,6 +1,6 @@
 # Roman Landscapes: An Interactive Atlas of Economy, Transport, and History
 
-**Roman Landscapes** (`https://romanlandscapes.org`) is an open educational and scholarly digital atlas of the Roman world. It integrates published datasets on physical geography, urban settlements, terrestrial road networks, and maritime connectivity into a self-contained, offline-capable web application.
+**Roman Landscapes** (`https://romanlandscapes.org`) is an open educational and scholarly digital atlas of the Roman world. It connects terrain, settlements and transport networks with evidence for production, exchange and taxation. Readers can trace a find to its assemblage, a payment to its document, or a historical figure to the statement linking them to a town. The maps, archives and sources are available together offline.
 
 MIT covers original code and documentation. See [Third-party notices](THIRD-PARTY-NOTICES.md) for the data and browser libraries.
 
@@ -23,6 +23,8 @@ The v0.2 catalog contains 75,223 records from 16 active sources, including 23,38
   - `584` modeled shipping and ferry routes (`coastal`: 441; `overseas`: 69; `slowover`: 69; `ferry`: 5) linked to `294` located port nodes and `7` documented unresolved node references.
 - **Ancient Gazetteer Search (Pleiades `v4.1`, 2025)**:
   - `32,665` regional place records and `29,150` joined ancient and modern name variants, supporting ranked, diacritic-insensitive search (e.g., `Roma` / `Rhome`).
+- **Economic evidence**. Explore mines, shipwrecks and cargo, amphora assemblages, Karanis tax rolls, olive oil and wine presses, stone quarries, and water-lifting technologies. Three archives preserve the source order of tax transactions, quarry entries and documentary water references. A collection anchor locates Karanis.
+- **Historical events and people**. Trace Wikidata statements for Roman political and military history from 509 BCE to 565 CE. Separate layers show events, personal activity, and places of birth, death or burial.
 - **Complete Offline PWA Support**:
   - Deterministic build and checksum-verified local browser storage (Origin Private File System + Service Worker) enabling full offline inspection of all map modes, layers, search indexes, record details, and dataset documentation.
 

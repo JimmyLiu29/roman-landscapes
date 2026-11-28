@@ -58,27 +58,56 @@ function tableRows(root, tables={}) {
   }
 }
 
+function formatSnak(snak) {
+  if (snak?.snaktype === 'somevalue') return 'unknown value';
+  if (snak?.snaktype === 'novalue') return 'no value';
+  const {type, value} = snak?.datavalue || {};
+  switch (type) {
+  case 'wikibase-entityid': return value.id;
+  case 'time': {
+    const parts = /^([+-])(\d+)-(\d{2})-(\d{2})T/.exec(value.time);
+    if (!parts) return value.time;
+    const [, sign, y, month, day] = parts;
+    const date = [Number(y), ...(value.precision >= 10 ? [month] : []),
+      ...(value.precision >= 11 ? [day] : [])].join('-');
+    return date + (sign === '-' ? ' BCE' : ' CE') + (value.precision < 9 ? ' (precision '+value.precision+')' : '');
+  }
+  case 'quantity': return [value.amount, value.unit === '1' ? '' : value.unit?.split('/').pop()].filter(Boolean).join(' ');
+  case 'monolingualtext': return value.text + ' (' + value.language + ')';
+  case 'string': return value;
+  default: return value == null ? 'unknown value' : JSON.stringify(value);
+  }
+}
+
+function snakList(group) {
+  return Object.entries(group || {}).map(([key, snaks]) =>
+    key + ' · ' + snaks.map(formatSnak).join(', ')).join('\n') || null;
+}
+
 function statement(root, item) {
   const stmt=item.Statement;
   const block=disclosure(item.Entity+' · '+item.Property+' · revision '+item.Revision);
   block.append(fields({Entity:item.Entity,Revision:item.Revision,Property:item.Property,Statement:stmt.id,
-    Rank:stmt.rank,Value:stmt.mainsnak,Qualifiers:stmt.qualifiers}));
+    Rank:stmt.rank,Value:formatSnak(stmt.mainsnak),Qualifiers:snakList(stmt.qualifiers)}));
   if (stmt.references?.length) {
-    for (const reference of stmt.references) block.append(fields(reference));
+    for (const reference of stmt.references) block.append(fields({Reference:reference.hash, Evidence:snakList(reference.snaks)}));
   } else block.append(element('p','No source reference recorded'));
   root.append(block);
 }
 
-function historical(root,d,select) {
+function historical(root,d,select,labelOf,associations) {
   root.append(fields(d.summary));
-  if (d.render_kind==='history_person')
-    root.append(element('p','414 people have activity or event locations and 944 have biographical locations. Both groups include the same 150 people.'));
+  if (d.render_kind==='history_person') {
+    const {activity, biography, both} = associations;
+    root.append(element('p', activity+' people have activity or event locations and '+biography+
+      ' have biographical locations. Both groups include the same '+both+' people.'));
+  }
   const url=URL.parse(d.source_url);
   if (url && ['http:','https:'].includes(url.protocol)) {
     const link=element('a','Wikidata source'); link.href=url.href; link.target='_blank'; link.rel='noopener noreferrer'; root.append(link);
   }
   for (const link of d.history_links) {
-    const section=disclosure(link.role+' · '+link.node);
+    const section=disclosure(link.role+' · '+(labelOf(link.node) || link.node));
     section.append(button('Open associated town',()=>select(link.node)),fields({Tier:link.tier,Basis:link.basis,Via:link.via}));
     for (const item of link.statement_evidence || []) statement(section,item);
     root.append(section);
@@ -125,7 +154,7 @@ function renderRelations(root,neighbors,select) {
     append(); root.append(group);
   }
 }
-export function renderDetail(record,d,neighbors,select,focusRow,sourcesById,browse,archives) {
+export function renderDetail(record,d,neighbors,select,focusRow,sourcesById,browse,archives,labelOf,associations) {
   const root=element('section');
   root.className='record-reading';
   root.append(element('h3',record.label.replace(/\s+/g,' ').trim()),element('small',record.kind+' · '+record.id));
@@ -250,7 +279,7 @@ export function renderDetail(record,d,neighbors,select,focusRow,sourcesById,brow
     if (d.summary) root.append(fields(d.summary));
     tableRows(root,d.tables); break;
   case 'history_event': case 'history_person':
-    historical(root,d,select); break;
+    historical(root,d,select,labelOf,associations); break;
   default: throw new Error('Unknown record presentation');
   }
   renderRelations(root,neighbors,select);

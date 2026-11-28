@@ -22,9 +22,15 @@ def encoded(data):
     return (json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False) + '\n').encode()
 
 
+def gzip_payload(payload):
+    compressed = bytearray(gzip.compress(payload, compresslevel=9, mtime=0))
+    compressed[9] = 0xff  # Use the portable OS marker regardless of the host zlib.
+    return bytes(compressed)
+
+
 def output(path, data):
     payload = encoded(data)
-    path.write_bytes(gzip.compress(payload, compresslevel=9, mtime=0) if path.suffix == '.gz' else payload)
+    path.write_bytes(gzip_payload(payload) if path.suffix == '.gz' else payload)
 
 
 def read_csv(path):

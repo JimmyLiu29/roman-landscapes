@@ -121,7 +121,7 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
       await page.locator('#search').fill('');await page.locator('#search-source').selectOption(d.id);
       const archive=release.archives.find(a=>a.id===d.id);
       const count=archive?.record_count ?? rows.filter(r=>r.source===d.id).length;
-      assert.equal(await page.locator('#search-status').textContent(),count+' results');
+      assert.equal(await page.locator('#search-status').textContent(),count+(count===1?' result':' results'));
       await page.locator('#search-results button').first().click();
       await page.locator('#record-panel[data-loaded]').waitFor();
     }
@@ -212,13 +212,14 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
       await blocks.first().locator('summary').click();
       const visible=await blocks.first().innerText();assert(visible.includes(String(item.event_revision)));
       if (!statements[0].references?.length) assert(visible.includes('No source reference recorded'));
-      else assert(visible.includes('snaks'));
+      else assert(visible.includes('Reference') && visible.includes('Evidence'));
     }
     assert((await body.textContent()).includes('Supporting dating events'));
     return {counts,actium:actium.id,person,supporting:supporting.id};
   });
   await test('T-A7',async()=>{
     await page.locator('#close-record').click();await page.locator('#reset').click();
+    let narrow;
     for (const width of [1280,390]) {
       await page.setViewportSize({width,height:width===390?844:800});
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),width);
@@ -230,7 +231,29 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
       if (width===390) {
         const box=await page.locator('#record-panel').boundingBox();assert(Math.abs(box.y+box.height-844)<2);
         assert((await page.locator('#close-record').boundingBox()).height>=44);
+        await page.locator('#close-record').click();
+        const warningRow=rows.find(r=>r.render_kind==='economy_karanis_transaction');
+        await openRecord(page,warningRow.id);
+        narrow = await page.evaluate(() => ({
+          warning:getComputedStyle(document.querySelector('.record-warnings')).display,
+          attributionRepeat:getComputedStyle(document.querySelector('.maplibregl-ctrl-attrib-button')).backgroundRepeat,
+          searchHeights:['#search','#search-source','#search-category'].map(s=>document.querySelector(s).getBoundingClientRect().height)
+        }));
+        assert.equal(narrow.warning,'block'); assert.equal(narrow.attributionRepeat,'no-repeat');
+        assert(narrow.searchHeights.every(h=>h>=44));
         await shot(page,'narrow-detail');
+        await page.locator('#close-record').click();
+        const legend=page.locator('[data-group=economy] > span:visible');
+        const categories=await page.locator('#economy-category option').evaluateAll(ns=>ns.map(n=>n.value).filter(Boolean));
+        assert.equal(categories.length,5);
+        for (const name of categories) {
+          await page.locator('#economy-category').selectOption(name);
+          assert.deepEqual(await legend.allTextContents(),[name]);
+        }
+        await page.locator('#economy-category').selectOption('');
+        assert.deepEqual(await legend.allTextContents(),categories);
+        narrow.legendCategories=categories;
+        continue;
       }
       await page.locator('#close-record').click();
     }
@@ -238,6 +261,6 @@ export async function siteCases(page,{test,rows,edges,detail,fixture,release,sho
     assert.equal(await page.locator('#credits > li').count(),16);
     assert.equal(await page.locator('#credits a:not([rel="noopener noreferrer"][target="_blank"])').count(),0);
     await page.locator('#credits').evaluate(n=>n.closest('details').open=false);
-    return {widths:[1280,390],sourceCredits:16,guideChapters:13};
+    return {widths:[1280,390],narrow,sourceCredits:16,guideChapters:13};
   });
 }

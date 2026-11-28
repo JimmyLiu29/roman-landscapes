@@ -56,24 +56,24 @@ const groups = [
     legend:[['shipping','Open-sea / ferry',['overseas','ferry']],['slowover','Slow open sea',['slowover']],
       ['coastal','Coastal',['coastal']],['port','Ports',null,'ports']]},
   ...[
-    ['economy','Economic evidence','#9d4c24'],
-    ['people-biography','People: birth, death & burial','#7b4193'],
-    ['people','People: activity & events','#007c82'],
-    ['events','Historical events','#c43544']
-  ].map(([id,title,color])=>({
-    id,title,sources:[{id,styles:[circle(id,color,4,0)]}],legend:[[id,title]]
+    ['economy','Economic evidence','#e69f00',3.5],
+    ['people-biography','People: birth, death & burial','#cc79a7',5.5],
+    ['people','People: activity & events','#332288',3.5],
+    ['events','Historical events','#d55e00',4.5]
+  ].map(([id,title,color,radius])=>({
+    id,title,sources:[{id,styles:[circle(id,color,radius,0)]}],legend:[[id,title]]
   }))
 ];
 
 export const economyColors = {
-  'Mining and metals':'#805023', 'Shipwrecks and cargo':'#1266a2',
-  'Amphorae and commodities':'#b34155', 'Fiscal records':'#5b4392',
-  'Oil and wine production':'#497528'
+  'Mining and metals':'#e69f00', 'Shipwrecks and cargo':'#0072b2',
+  'Amphorae and commodities':'#56b4e9', 'Fiscal records':'#444444',
+  'Oil and wine production':'#009e73'
 };
 const economy = groups.find(group=>group.id==='economy');
 economy.sources[0].styles[0].paint['circle-color'] =
   ['match',['get','category'],...Object.entries(economyColors).flat(),'#626262'];
-economy.legend = Object.keys(economyColors).map((name,i)=>['economic-'+i,name]);
+economy.legend = Object.keys(economyColors).map((name,i)=>['economic-'+i,name,[name]]);
 const drawOrder = ['maritime','roads','ports','settlements','economy','people-biography','people','events'];
 const pickOrder = ['settlements','ports','events','people','people-biography','economy','roads','maritime'];
 const credits = {maritime:'Stanford ORBIS v2',roads:'Itiner-e v1.3',settlements:'Oxford Hanson Cities',economy:'OxREP · RAAD'};

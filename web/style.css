@@ -11,7 +11,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 main { display: grid; grid-template-columns: 356px minmax(0, 1fr); height: 100dvh; }
-aside { min-width: 0; padding: 30px 27px; overflow: auto; border-right: 1px solid var(--line); }
+main > aside { min-width: 0; padding: 30px 27px; overflow: auto; border-right: 1px solid var(--line); }
 header { padding-bottom: 22px; }
 h1, h2, legend { font-family: Georgia, serif; font-weight: 500; }
 h1 { margin: 0; font-size: 38px; letter-spacing: -.05em; line-height: 1.12; }
@@ -53,7 +53,7 @@ output { font: 12px ui-monospace, monospace; color: #435a5b; }
 [hidden] { display: none !important; }
 @media (max-width: 740px) {
   main { height: auto; display: flex; flex-direction: column; }
-  aside { display: contents; }
+  main > aside { display: contents; }
   header { order: -2; padding: 15px 18px; }
   h1 { font-size: 29px; }
   .subtitle { max-width: none; font-size: 13px; margin-top: 4px; }
@@ -66,7 +66,9 @@ output { font: 12px ui-monospace, monospace; color: #435a5b; }
 }
 
 #atlas-layers label,#foundation-controls>label,#search-results small,.record-reading small{display:block}
-#search,#search-source,#search-category{box-sizing:border-box;max-width:100%;min-height:32px;margin:4px 0}
+#search,#search-source,#search-category{display:block;width:100%;box-sizing:border-box;max-width:100%;min-height:32px;margin:4px 0}
+#foundation-controls > label { margin-top:14px; }
+.archive-anchor { margin-left:16px; justify-self:start; font-size:12px; }
 #search-results{max-height:230px;overflow:auto}#search-results button{display:block;width:100%;text-align:left}
 .record-reading{overflow-wrap:anywhere}.record-reading dl{margin:8px 0}.record-reading dt{font-weight:600}
 .record-reading dd{margin-left:0}.record-reading pre{white-space:pre-wrap}.record-reading table{width:100%;border-collapse:collapse}
@@ -109,23 +111,30 @@ output { font: 12px ui-monospace, monospace; color: #435a5b; }
   .record-reading { margin:0; }
 }
 
-.key-people-biography { background: #7b4193; border-radius: 50%; }
-.key-people { background: #007c82; border-radius: 50%; }
-.key-events { background: #c43544; border-radius: 50%; }
-.key-economic-0 { background: #805023; border-radius: 50%; }
-.key-economic-1 { background: #1266a2; border-radius: 50%; }
-.key-economic-2 { background: #b34155; border-radius: 50%; }
-.key-economic-3 { background: #5b4392; border-radius: 50%; }
-.key-economic-4 { background: #497528; border-radius: 50%; }
+.key-people-biography { background: #cc79a7; border-radius: 50%; }
+.key-people { background: #332288; border-radius: 50%; }
+.key-events { background: #d55e00; border-radius: 50%; }
+.key-economic-0 { background: #e69f00; border-radius: 50%; }
+.key-economic-1 { background: #0072b2; border-radius: 50%; }
+.key-economic-2 { background: #56b4e9; border-radius: 50%; }
+.key-economic-3 { background: #444444; border-radius: 50%; }
+.key-economic-4 { background: #009e73; border-radius: 50%; }
+
+.legend-group i:is([class^="key-economic"], .key-people, .key-events, .key-people-biography) { border:1px solid white; }
+.legend .key-people-biography { width:12px; height:12px; }
+.legend .key-people { width:8px; height:8px; }
 
 #archives { display: grid; gap: .35rem; }
-#collection-notices p, .record-warnings { border-left: 3px solid #99652f; padding: .5rem .75rem; background: #faf2df; }
+#collection-notices p { border-left: 3px solid #99652f; padding: .5rem .75rem; background: #faf2df; }
+.record-warnings { display:block; border:0; border-left:3px solid #99652f; padding:8px 12px; background:#faf2df; margin:10px 0; }
 .record-reading details { overflow-wrap: anywhere; }
 @media (max-width:740px) {
   button, select, input[type=search], summary, .layer-control label, .guide-text nav a { min-height:44px; }
   #record-content, .record-reading dl, .record-reading dd { min-width:0; overflow-wrap:anywhere; }
 }
 @media (max-width:740px) {
+  #search, #search-source, #search-category { min-height:44px; }
+  #map .maplibregl-ctrl-attrib-button { background-repeat:no-repeat; background-position:center; border-radius:50%; }
   #map .maplibregl-ctrl-group button, #map .maplibregl-ctrl-attrib-button { width:44px; height:44px; }
   .layer-control select, .layer-control label, #guide-dialog nav a { min-height:44px; }
   .layer-control label, #guide-dialog nav a { display:flex; align-items:center; }

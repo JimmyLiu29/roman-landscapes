@@ -121,6 +121,10 @@ def check(directory):
     links = re.findall(r'<a href="#([^"]+)">', dialog)
     assert anchors == links and len(set(anchors)) == len(anchors)
     assert sum(x.startswith('datasets-chapter-') for x in anchors) == 13
+    coverage = html.split('<summary>Sources &amp; map limits</summary>',1)[1].split('</details>',1)[0]
+    guide = (ROOT/'docs/datasets.md').read_text().split('### 2.',1)[0]
+    for section in (coverage, guide):
+        assert '258 relief tiles' in section and '394' in section
     release = json.loads((directory/'release.json').read_bytes())
     pack = directory/'packs'/release['id']
     sources = json.loads((pack/'sources.json').read_bytes())['sources']

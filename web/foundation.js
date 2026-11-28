@@ -6,6 +6,19 @@ import { economyColors, registry } from './layers.js';
 const $=selector=>document.querySelector(selector);
 const empty={type:'FeatureCollection',features:[]};
 
+function geometryBounds(coordinates, bounds) {
+  if (!Array.isArray(coordinates)) return bounds;
+  const [x,y] = coordinates;
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    if (!bounds) return [x,y,x,y];
+    bounds[0] = Math.min(bounds[0],x); bounds[1] = Math.min(bounds[1],y);
+    bounds[2] = Math.max(bounds[2],x); bounds[3] = Math.max(bounds[3],y);
+  } else {
+    for (const child of coordinates) bounds = geometryBounds(child, bounds);
+  }
+  return bounds;
+}
+
 export function relationIndex(edges,byID) {
   const neighbors=new Map();
   for (const edge of edges) {
@@ -28,6 +41,13 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     ...files.map(file=>file.id+'.geojson.gz')].map(load));
   const records=catalog.records.filter(r=>sources.has(r.source));
   const byID=new Map(records.map(r=>[r.id,r])), index=searchIndex(records,archives);
+  const labelOf = id => byID.get(id)?.label;
+  const associations = sourcesById.get('wikidata-history')?.accounting?.person_associations ||
+    records.reduce((counts, record) => {
+      const activity = record.layers.includes('people'), biography = record.layers.includes('people-biography');
+      counts.activity += Number(activity); counts.biography += Number(biography); counts.both += Number(activity && biography);
+      return counts;
+    }, {activity:0, biography:0, both:0});
   const neighbors=relationIndex(edges,byID);
   const contents=new Map(files.map((file,i)=>[file.id,collections[i]]));
   const styles=files.flatMap(file=>file.styles.map(style=>({...style,source:file.id,drawOrder:file.drawOrder})));
@@ -127,7 +147,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
       if(ui.select) ui.select.disabled=!ui.input.checked;
       if(ui.sub) ui.sub.disabled=!ui.input.checked;
       for(const {key,values,source} of ui.keys) {
-        key.hidden=!visible(source) || Boolean(values && choice?.values && !values.some(v=>choice.values.includes(v)));
+        key.hidden=!visible(source) || Boolean(state.categories[group.id] && !values?.includes(state.categories[group.id])) || Boolean(values && choice?.values && !values.some(v=>choice.values.includes(v)));
       }
     }
     for (const style of styles) {
@@ -215,17 +235,13 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
       const detail=shard[id];
       const banner=element('p',"This record's layer or detail filter is currently hidden; the selected geometry is highlighted for inspection.");
       banner.id='selection-notice'; banner.hidden=true;
-      body.replaceChildren(banner,renderDetail(record,detail,neighbors.get(id)||[],(other,row)=>select(other,row,'relation'),focusRow,sourcesById,browse,archives));
+      body.replaceChildren(banner,renderDetail(record,detail,neighbors.get(id)||[],(other,row)=>select(other,row,'relation'),focusRow,sourcesById,browse,archives,labelOf,associations));
       selected={record,detail}; highlight();
       if (locate) {
         const boxes=record.layers.filter(l=>allowed(l,attributes.get(id+'#'+l))).map(l=>record.layer_bboxes?.[l]).filter(Boolean);
         let bounds=record.bbox;
         if (boxes.length) bounds=[0,1,2,3].map((i)=>(i<2?Math.min:Math.max)(...boxes.map(box=>box[i])));
-        if (!bounds && detail.geometry) {
-          const coords=detail.geometry.type==='Point' ? [detail.geometry.coordinates] :
-            detail.geometry.type==='MultiLineString' ? detail.geometry.coordinates.flat() : detail.geometry.coordinates;
-          bounds=[0,1,0,1].map((axis,i)=>(i<2?Math.min:Math.max)(...coords.map(point=>point[axis])));
-        }
+        if (!bounds) bounds = geometryBounds(detail.geometry?.coordinates);
         if (bounds) map.fitBounds([[bounds[0],bounds[1]],[bounds[2],bounds[3]]],{maxZoom:6,padding:40,duration:0});
       }
       panel.dataset.loaded=id;
@@ -269,7 +285,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     const open=element('button',archive.label+' ('+number(archive.record_count)+')');
     open.dataset.archive=archive.id; open.onclick=()=>browse(archive.id); $('#archives').append(open);
     if (archive.anchor_id) {
-      const anchor=element('button','Open collection anchor'); anchor.onclick=()=>select(archive.anchor_id);
+      const anchor=element('button','Open Karanis map anchor'); anchor.className='archive-anchor'; anchor.onclick=()=>select(archive.anchor_id);
       $('#archives').append(anchor);
     }
   }
@@ -279,7 +295,7 @@ export async function mountFoundation(map,release,load,preferences={},persist=()
     const candidates=category && !filter.value && !$('#search').value.trim()
       ? records.map(record=>({record})) : index.search($('#search').value,filter.value);
     hits=[...candidates].filter(hit=>!category || kindOf(hit.record)===category); shown=0;
-    $('#search-results').replaceChildren(); $('#search-status').textContent=hits.length+' results'; more();
+    $('#search-results').replaceChildren(); $('#search-status').textContent=hits.length===1 ? '1 result' : hits.length+' results'; more();
   }
   let timer;
   $('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(search,120);};

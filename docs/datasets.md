@@ -10,7 +10,7 @@ Before we can understand where Roman roads ran or why cities grew in particular 
 #### What You Can See on the Map
 The atlas offers two base-map modes that can be switched at any time without losing your current position or selected records:
 - **Simple Geography Mode**: Displays clean land and sea contours (`land.geojson`, `ocean.geojson`, and coastline boundaries), designed for high-contrast inspection of dense road networks and settlement distributions.
-- **Natural Geography Mode**: Adds 394 pre-rendered shaded relief tiles (`z0–z6`, viewable up to `z7`) together with **318 river features** and **230 lake features**, highlighting the mountain barriers (such as the Alps, Apennines, Taurus, and Atlas ranges) and river corridors (the Rhine, Danube, Rhône, Po, Tiber, and Nile) that structured ancient movement.
+- **Natural Geography Mode**: The study area intersects 258 relief tiles. The wider, buffered viewing extent contains 394 tiles in total. This mode displays the complete shaded relief set (`z0–z6`, viewable up to `z7`) together with **318 river features** and **230 lake features**, highlighting the mountain barriers (such as the Alps, Apennines, Taurus, and Atlas ranges) and river corridors (the Rhine, Danube, Rhône, Po, Tiber, and Nile) that structured ancient movement.
 
 #### How Scholars Use It & Important Limitations
 - **Modern Physical Reference, Not Ancient Coastline Reconstruction**: Natural Earth depicts modern physical geography. Over the past two millennia, river deltas have silted up (for example, around Ostia at the mouth of the Tiber, or Miletus and Ephesus in western Asia Minor), and local coastlines or marshlands have shifted. The base map serves as a consistent physical reference frame rather than a paleogeographic reconstruction of antiquity.
@@ -100,51 +100,67 @@ One additional source-identified place, `pleiades:114765`, is available from lin
 
 ---
 
-### 6. Mining and metals
+### 6. Mining and Metals — *OxREP Mines Database* (`v3.0`, 2025)
 
-The mining inventory preserves 1,399 site records. Search by mineID, Domergue number or Romanian RAN identifier. Read the opening and closing bounds separately. A missing coordinate leaves the record available in search.
+Andrew Wilson’s inventory brings together 1,399 records of mineral extraction. Compare the distribution of workings by metal or follow a site through its mineID, Domergue number or Romanian RAN identifier. The atlas locates 1,388 records and retains the other 11 in search.
 
----
-
-### 7. Shipwrecks and cargo
-
-The 1,818 wreck records preserve approximate locations and the original wreck, Parker and Strauss identifiers. Cargo is attached through two different keys. The wreck records contain 887 amphora rows and 2,544 site objects. Three unassigned objects remain together in a source note. Two shifted spreadsheet rows include the normalized fields alongside their original values.
+Read the earliest and latest proposed opening and closing dates separately. A range bounds the evidence for a working. It cannot establish continuous exploitation or the volume of ore produced.
 
 ---
 
-### 8. Amphorae and commodities
+### 7. Shipwrecks and Cargo — *OxREP Shipwrecks Database* (`v2.1`, 2017)
 
-RAAD records 1,469 observations in 79 assemblages. Each observation comes from a type-by-site matrix cell. An assemblage total and its component observations describe the same material. Follow explicit place IDs and the native type concordance to inspect these relationships.
+The 1,818 wreck records document vessels and cargo at sea. The atlas preserves the native wreck, Parker and Strauss identifiers. Wreck IDs link 887 amphora entries to wrecks, while location IDs link 2,544 site objects. Three objects without a secure match remain in a separate source note. Two shifted spreadsheet rows retain their original values alongside the normalized fields.
 
----
-
-### 9. Karanis tax rolls
-
-Browse 17,053 transactions in source order. A single collection anchor links the archive to Karanis. The archive location supplies no individual transaction coordinate. P.Mich. and line identify document locations. The two corrected drachma columns remain distinct. Three regnal-year cells contain the spreadsheet value 42339.
+Only 1,584 wrecks have a mapped location, and plotted positions may be approximate. Recovery, excavation and publication affect which wrecks enter the inventory. Concentrations of finds alone cannot establish the volume of traffic on a route.
 
 ---
 
-### 10. Olive and wine presses
+### 8. Amphorae and Commodities — *Roman Amphorae Assemblages Database* (`v1.0.0`, 2021)
 
-The 232 grouped records represent 760 presses. The press count measures installations reported within groups. Locations and date ranges retain source uncertainty, including unspecified bounds.
+The RAAD workbook organizes transport containers by type and findspot. Its 1,469 populated type-by-site observations belong to 79 assemblages. The map locates the assemblage, and the detail view connects its observations to the source typology and concordance. Seventy assemblages carry an explicit Pleiades link.
 
----
-
-### 11. Stone quarries
-
-Browse 792 quarry records by source order, site, material or province. The retained table supplies neither coordinates nor external place identifiers. A matching place name alone cannot locate a quarry.
+An assemblage total and its component observations describe the same finds. Adding them counts the material twice. A vessel type provides evidence for the movement of containers, with the identification of their contents dependent on the source.
 
 ---
 
-### 12. Water technologies
+### 9. Taxation at Karanis — *OxREP Karanis Tax Rolls* (`v2.0`, 2024)
 
-The 622 documentary references preserve document and line locators. Twenty-five additional document place and area records are searchable through source links. Question marks in the Greek word column are already present in the source.
+The archive preserves 17,053 transactions in source order. The P.Mich. identifier and line locate a payment in its document. A single map anchor locates the collection at Karanis. The rolls supply no coordinates for individual payments.
+
+The two corrected drachma fields preserve distinct readings of the amount. Three regnal-year cells retain the anomalous spreadsheet value 42339 and carry a warning in the detail view.
 
 ---
 
-### 13. Historical events and people
+### 10. Olive Oil and Wine Production — *OxREP Olive Oil and Wine Presses* (`v1.0`, 2015)
 
-Wikidata evidence connects events and people to towns through named statements, revision IDs, roles and references. A person may appear in both map layers. Open a supporting dating event to inspect the associated claim and date statements, including events outside the mapped selection.
+The database describes agricultural processing installations. Its 232 grouped records represent 760 presses. The 225 mapped groups locate reported evidence, and the remaining seven can be inspected in search. A group may contain several presses.
+
+Counts measure the installations reported at each site. Estimating production would also require evidence for capacity, use and chronology. Open date bounds retain the uncertainty of the source.
+
+---
+
+### 11. Stone Extraction — *OxREP Gazetteer of Stone Quarries in the Roman World* (`v1.0`, 2013)
+
+The archive contains 792 quarry records. Site names, materials and provinces allow comparison of stone extraction across regions. Browsing follows the source order so that a reader can trace an entry back to the gazetteer.
+
+The retained table supplies neither coordinates nor external place identifiers. The atlas preserves every record in the archive and makes no spatial join from a place name alone.
+
+---
+
+### 12. Water-Lifting Technologies — *OxREP Water-Lifting Technology Database* (`v1.0`, 2008)
+
+The archive brings together 622 documentary references to water-lifting technology. Document and line locators lead back to individual attestations. Twenty-five supporting place and area records retain the source’s own links. Several references may concern the same installation.
+
+The retained Greek term column contains question marks. The atlas flags the affected readings and leaves reconstruction to a reader consulting the cited text. Document places carry no equipment coordinates.
+
+---
+
+### 13. Political and Military History — *Wikidata* (12 October 2026 snapshot)
+
+The historical selection covers 509 BCE–565 CE, from the Roman Republic through the reign of Justinian I. It links 324 events and 1,208 people to 383 towns using the entity revisions in the 12 October 2026 Wikidata snapshot. Each town link identifies its role and the supporting statements. Qualifiers, references and supporting dating events can be inspected in the detail view.
+
+Activity or event associations locate 414 people, while birth, death or burial associations locate 944. The overlap is 150 people. A command relationship can associate a person with a town without establishing physical presence there. An event used to date a career may lie outside the mapped selection.
 
 #### Scope of interpretation
 

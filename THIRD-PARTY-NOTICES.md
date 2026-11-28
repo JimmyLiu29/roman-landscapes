@@ -2,25 +2,25 @@
 
 The MIT License covers the original project source code and documentation. Upstream data and browser libraries retain the following terms and citations.
 
-## natural-earth-relief
+## Natural Earth — Shaded Relief
 
 2.0.0 · Made with Natural Earth
 
 Public domain [Terms](https://www.naturalearthdata.com/about/terms-of-use/).
 
-## natural-earth-land
+## Natural Earth — Land
 
 5.1.1 · Made with Natural Earth
 
 Public domain [Terms](https://www.naturalearthdata.com/about/terms-of-use/).
 
-## natural-earth-rivers
+## Natural Earth — Rivers and Lake Centerlines
 
 5.0.0 · Made with Natural Earth
 
 Public domain [Terms](https://www.naturalearthdata.com/about/terms-of-use/).
 
-## natural-earth-lakes
+## Natural Earth — Lakes
 
 5.0.0 · Made with Natural Earth
 
